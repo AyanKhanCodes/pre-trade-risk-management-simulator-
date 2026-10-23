@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from app.config import RiskConfig
+from app.config import RULE_METADATA, RiskConfig
 
 
 @dataclass
@@ -24,11 +24,18 @@ class RiskCheckResult:
         rule_id: Identifier for the rule (e.g. "RISK-01").
         passed: Whether the rule passed.
         reason: Human-readable reason if the rule failed.
+        rule_name: Human-readable name of the rule.
     """
 
     rule_id: str
     passed: bool
     reason: str = ""
+    rule_name: str = ""
+
+    def __post_init__(self) -> None:
+        """Populate rule_name from metadata if not provided."""
+        if not self.rule_name and self.rule_id in RULE_METADATA:
+            self.rule_name = RULE_METADATA[self.rule_id]["name"]
 
 
 @dataclass
@@ -146,11 +153,142 @@ def check_price_validity(price: Decimal) -> RiskCheckResult:
     return RiskCheckResult(rule_id="RISK-04", passed=True)
 
 
+def check_min_price(price: Decimal, min_price: Decimal) -> RiskCheckResult:
+    """RISK-05: Penny stock protection.
+
+    Rejects orders where the price per share is below the configured
+    minimum threshold.
+
+    Args:
+        price: Price per unit.
+        min_price: Minimum allowed price per share.
+
+    Returns:
+        RiskCheckResult indicating pass or fail.
+    """
+    if price < min_price:
+        return RiskCheckResult(
+            rule_id="RISK-05",
+            passed=False,
+            reason=(
+                f"Price ${price} is below minimum ${min_price} "
+                f"(penny stock protection)"
+            ),
+        )
+    return RiskCheckResult(rule_id="RISK-05", passed=True)
+
+
+def check_max_quantity(quantity: int, max_qty: int) -> RiskCheckResult:
+    """RISK-06: Maximum quantity per order.
+
+    Args:
+        quantity: Number of units.
+        max_qty: Maximum allowed quantity per order.
+
+    Returns:
+        RiskCheckResult indicating pass or fail.
+    """
+    if quantity > max_qty:
+        return RiskCheckResult(
+            rule_id="RISK-06",
+            passed=False,
+            reason=(
+                f"Quantity {quantity} exceeds maximum allowed {max_qty}"
+            ),
+        )
+    return RiskCheckResult(rule_id="RISK-06", passed=True)
+
+
+def check_max_price(price: Decimal, max_price: Decimal) -> RiskCheckResult:
+    """RISK-07: Fat-finger protection.
+
+    Rejects orders where the price per share exceeds a reasonable
+    maximum to prevent accidental trades.
+
+    Args:
+        price: Price per unit.
+        max_price: Maximum allowed price per share.
+
+    Returns:
+        RiskCheckResult indicating pass or fail.
+    """
+    if price > max_price:
+        return RiskCheckResult(
+            rule_id="RISK-07",
+            passed=False,
+            reason=(
+                f"Price ${price} exceeds maximum ${max_price} "
+                f"(fat-finger protection)"
+            ),
+        )
+    return RiskCheckResult(rule_id="RISK-07", passed=True)
+
+
+def check_daily_order_count(
+    current_count: int, max_count: int
+) -> RiskCheckResult:
+    """RISK-08: Daily order count limit.
+
+    Checks that the number of orders already placed today (before this
+    new order) has not reached the daily maximum.
+
+    Args:
+        current_count: Number of orders already placed today.
+        max_count: Maximum allowed orders per day.
+
+    Returns:
+        RiskCheckResult indicating pass or fail.
+    """
+    if current_count >= max_count:
+        return RiskCheckResult(
+            rule_id="RISK-08",
+            passed=False,
+            reason=(
+                f"Daily order count {current_count} has reached the "
+                f"maximum of {max_count}"
+            ),
+        )
+    return RiskCheckResult(rule_id="RISK-08", passed=True)
+
+
+def check_daily_notional(
+    current_notional: Decimal,
+    order_value: Decimal,
+    max_notional: Decimal,
+) -> RiskCheckResult:
+    """RISK-09: Daily notional limit.
+
+    Checks that adding this order's value to the day's running total
+    would not exceed the daily maximum.
+
+    Args:
+        current_notional: Total notional value of orders already placed today.
+        order_value: Value of the order being evaluated.
+        max_notional: Maximum allowed daily notional value.
+
+    Returns:
+        RiskCheckResult indicating pass or fail.
+    """
+    projected = current_notional + order_value
+    if projected > max_notional:
+        return RiskCheckResult(
+            rule_id="RISK-09",
+            passed=False,
+            reason=(
+                f"Projected daily notional ${projected} would exceed "
+                f"the maximum of ${max_notional}"
+            ),
+        )
+    return RiskCheckResult(rule_id="RISK-09", passed=True)
+
+
 def evaluate(
     quantity: int,
     price: Decimal,
     symbol: str,
     config: RiskConfig,
+    daily_order_count: int = 0,
+    daily_notional: Decimal = Decimal("0"),
 ) -> RiskResult:
     """Evaluate an order against all risk rules.
 
@@ -162,15 +300,24 @@ def evaluate(
         price: Price per unit.
         symbol: Asset ticker symbol.
         config: Risk configuration with limits and restricted symbols.
+        daily_order_count: Number of orders already placed today.
+        daily_notional: Total notional value of orders already placed today.
 
     Returns:
         RiskResult with aggregated pass/fail and all rejection reasons.
     """
+    order_value = Decimal(quantity) * price
+
     checks = [
         check_quantity_validity(quantity),
         check_price_validity(price),
+        check_min_price(price, config.min_price),
+        check_max_price(price, config.max_price),
         check_max_order_value(quantity, price, config.max_order_value),
+        check_max_quantity(quantity, config.max_quantity),
         check_restricted_symbol(symbol, config.restricted_symbols),
+        check_daily_order_count(daily_order_count, config.max_daily_orders),
+        check_daily_notional(daily_notional, order_value, config.max_daily_notional),
     ]
 
     result = RiskResult()

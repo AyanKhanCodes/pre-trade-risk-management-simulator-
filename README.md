@@ -1,104 +1,102 @@
-# Pre-Trade Risk Management Simulator
+# Aegis Pre-Trade Risk Management System
 
-A web application that accepts simulated buy and sell orders and decides whether each order should be approved or rejected before execution, based on configurable risk rules.
+A high-performance pre-trade risk management engine and financial trading dashboard that evaluates simulated equity buy and sell orders against multi-tier compliance, position, and price rules before approval.
 
-> **Educational simulator only.** Does not connect to real brokers, use live market data, or handle real money.
+> **Trading Simulator & Educational Platform.** Evaluates deterministic pre-trade risk controls without risking live market capital or requiring live broker credentials.
+
+---
+
+## Key Features
+
+1. **Enterprise Financial Dashboard (React + TypeScript + Tailwind CSS)**:
+   - **Order Execution Terminal**: Interactive order submission with instant pre-validation as you type, quick-pick scenarios, and deterministic approval/rejection decision cards.
+   - **Audit Trail & Order Ledger**: Filterable, sortable historical ledger with full audit dossier for every order.
+   - **Risk Rules & Engine Manager**: Interactive card editor allowing users to configure limits and restricted securities on the fly.
+   - **Risk Analytics**: Telemetry dashboard tracking daily notional exposure, approval rates, and decision distribution charts.
+
+2. **9 Deterministic Pre-Trade Risk Gates**:
+   - **RISK-01 (Max Order Value)**: Caps single-order notional value (default: $10,000.00).
+   - **RISK-02 (Compliance Blacklist)**: Prohibits restricted symbols (e.g., TSLA, GME, AMC).
+   - **RISK-03 (Quantity Validity)**: Enforces strictly positive integer unit sizing.
+   - **RISK-04 (Price Validity)**: Enforces positive decimal pricing.
+   - **RISK-05 (Penny Stock Floor)**: Protects against illiquid microcaps and sub-dollar volatility by rejecting prices below minimum (default: $1.00).
+   - **RISK-06 (Position Quantity Cap)**: Limits maximum shares per order (default: 10,000 shares).
+   - **RISK-07 (Fat-Finger Ceiling)**: Rejects abnormally elevated prices (default: $50,000.00 max).
+   - **RISK-08 (Daily Order Count)**: Cumulative daily order throttle (default: 50 orders/day).
+   - **RISK-09 (Daily Notional Limit)**: Cumulative portfolio notional cap (default: $500,000.00/day).
+
+3. **Exhaustive Non-Short-Circuiting Evaluation**:
+   - Rather than stopping on the first failure, the engine evaluates **all 9 rules simultaneously** to provide a complete diagnostic audit trail in a single response.
+
+---
 
 ## Quick Start
 
-### Prerequisites
+### 1. Prerequisites
+- Python 3.11+
+- Node.js 18+ (for frontend development/builds)
 
-- Python 3.11 or higher
-- pip
-
-### Setup
+### 2. Setup Python Environment
 
 ```bash
-# Create a virtual environment
+# In project root
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -e ".[dev]"
 ```
 
-### Run the Application
+### 3. Run the Unified Application
+
+The React frontend is compiled directly into FastAPI's static assets:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Open [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive Swagger UI.
+- Open **[http://localhost:8000](http://localhost:8000)** for the **Trading Dashboard**.
+- Open **[http://localhost:8000/docs](http://localhost:8000/docs)** for the **Swagger OpenAPI Specification**.
 
-### Run Tests
+---
 
-```bash
-# Run all tests
-python -m pytest tests/ -v
+## Frontend Development (Optional)
 
-# Run unit tests only
-python -m pytest tests/unit/ -v
-
-# Run integration tests only
-python -m pytest tests/integration/ -v
-```
-
-## API Endpoints
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `POST` | `/orders` | Create and evaluate an order |
-| `GET` | `/orders` | List order history |
-| `GET` | `/orders/{order_id}` | Retrieve one order |
-| `GET` | `/health` | Health check |
-| `GET` | `/risk-config` | View active risk configuration |
-
-### Example: Submit an Order
+If modifying the frontend source code:
 
 ```bash
-curl -X POST http://localhost:8000/orders \
-  -H "Content-Type: application/json" \
-  -d '{"symbol": "AAPL", "side": "BUY", "quantity": 10, "price": "150.00"}'
+cd frontend
+npm install
+npm run dev      # Starts Vite dev server with proxy at http://localhost:5173
+npm run build    # Compiles production bundle directly to ../app/static/
 ```
 
-## Risk Rules
+---
 
-| Rule | Description | Default Config |
-|------|-------------|----------------|
-| RISK-01 | Maximum order value | quantity × price ≤ $10,000.00 |
-| RISK-02 | Restricted symbol | TSLA is restricted |
-| RISK-03 | Quantity validity | Must be a positive integer |
-| RISK-04 | Price validity | Must be a positive decimal |
+## Automated Test Suite
 
-## Order States
+Run the full pytest suite (124 tests):
 
-```
-CREATED → VALIDATING → APPROVED → EXECUTED
-                     → REJECTED
+```bash
+.venv/bin/python -m pytest tests/ -v
 ```
 
-## Project Structure
+- **Unit tests**: `tests/unit/` (models, state machine, risk rules 01 through 09)
+- **Integration tests**: `tests/integration/` (order lifecycle, REST API, SPA routing)
 
-```
-app/
-├── main.py              # FastAPI application
-├── config.py            # Risk configuration
-├── database.py          # SQLite setup
-├── api/routes.py        # API endpoints
-├── models/order.py      # Domain models & state machine
-├── schemas/order.py     # Request/response schemas
-├── services/
-│   ├── order_service.py # Order orchestration
-│   └── risk_engine.py   # Risk rule evaluation
-└── repositories/
-    └── order_repository.py  # Database operations
-tests/
-├── unit/                # Unit tests for risk engine, models, state transitions
-└── integration/         # API integration tests
-```
+---
 
-## Known Limitations
+## API Reference
 
-- SQLite is used for simplicity; not suitable for high-concurrency production use.
-- No authentication or authorization.
-- No real market data integration.
+All backend endpoints are hosted under `/api`:
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/orders` | Submit and evaluate order against all 9 risk gates |
+| `GET` | `/api/orders` | Retrieve order audit history ledger |
+| `GET` | `/api/orders/{id}` | Inspect full risk dossier for a single order |
+| `GET` | `/api/risk-config` | View active risk thresholds and restricted list |
+| `PUT` | `/api/risk-config` | Update risk thresholds dynamically |
+| `GET` | `/api/risk-rules` | Retrieve metadata and status for all 9 rules |
+| `GET` | `/api/orders/stats/summary` | Aggregate daily and all-time risk telemetry |
+| `GET` | `/api/health` | Health check probe |

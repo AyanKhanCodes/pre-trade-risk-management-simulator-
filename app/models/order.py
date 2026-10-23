@@ -82,6 +82,7 @@ class Order:
         order_value: Computed as quantity × price.
         status: Current lifecycle state.
         rejection_reasons: List of reasons if the order was rejected.
+        risk_checks: Structured results from each risk-rule evaluation.
         created_at: Timestamp when the order was created.
     """
 
@@ -93,6 +94,7 @@ class Order:
     order_value: Decimal
     status: OrderStatus = OrderStatus.CREATED
     rejection_reasons: list[str] = field(default_factory=list)
+    risk_checks: list[dict] = field(default_factory=list)
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

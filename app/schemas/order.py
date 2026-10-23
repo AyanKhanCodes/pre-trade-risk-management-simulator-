@@ -12,6 +12,15 @@ from pydantic import BaseModel, Field, field_validator
 from app.models.order import OrderSide
 
 
+class RiskCheckResponse(BaseModel):
+    """Schema for a single risk check result in the order response."""
+
+    rule_id: str
+    rule_name: str
+    passed: bool
+    reason: str
+
+
 class OrderCreateRequest(BaseModel):
     """Schema for creating a new order.
 
@@ -79,6 +88,7 @@ class OrderResponse(BaseModel):
     order_value: str
     status: str
     rejection_reasons: list[str]
+    risk_checks: list[RiskCheckResponse]
     created_at: str
 
     model_config = {"from_attributes": True}

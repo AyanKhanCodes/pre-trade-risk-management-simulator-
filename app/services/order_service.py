@@ -56,6 +56,7 @@ async def create_and_validate_order(
         order_value=order_value,
         status=OrderStatus.CREATED,
         rejection_reasons=[],
+        risk_checks=[],
         created_at=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -68,19 +69,39 @@ async def create_and_validate_order(
         db, order.id, OrderStatus.VALIDATING
     )
 
+    # Fetch daily aggregates for daily-limit risk checks.
+    daily_order_count = await order_repository.get_daily_order_count(db)
+    daily_notional = await order_repository.get_daily_notional(db)
+
     # Run the risk engine — all rules evaluated, no short-circuit.
     risk_result = risk_engine.evaluate(
         quantity=order.quantity,
         price=order.price,
         symbol=order.symbol,
         config=config,
+        daily_order_count=daily_order_count,
+        daily_notional=daily_notional,
     )
+
+    # Store structured risk check results on the order.
+    order.risk_checks = [
+        {
+            "rule_id": check.rule_id,
+            "rule_name": check.rule_name,
+            "passed": check.passed,
+            "reason": check.reason,
+        }
+        for check in risk_result.check_results
+    ]
 
     # Transition to APPROVED or REJECTED based on risk result.
     if risk_result.passed:
         order.transition_to(OrderStatus.APPROVED)
         await order_repository.update_order_status(
-            db, order.id, OrderStatus.APPROVED
+            db,
+            order.id,
+            OrderStatus.APPROVED,
+            risk_checks=order.risk_checks,
         )
     else:
         order.rejection_reasons = risk_result.rejection_reasons
@@ -90,6 +111,7 @@ async def create_and_validate_order(
             order.id,
             OrderStatus.REJECTED,
             rejection_reasons=risk_result.rejection_reasons,
+            risk_checks=order.risk_checks,
         )
 
     return order
