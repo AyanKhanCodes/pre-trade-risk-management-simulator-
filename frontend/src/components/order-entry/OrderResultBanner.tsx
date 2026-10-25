@@ -8,7 +8,8 @@ import {
   ArrowRight,
   Hash,
   Clock,
-  DollarSign
+  DollarSign,
+  Zap,
 } from 'lucide-react';
 import { Order } from '../../types';
 import { formatCurrency, formatDateTime } from '../../lib/utils';
@@ -16,14 +17,31 @@ import { formatCurrency, formatDateTime } from '../../lib/utils';
 interface OrderResultBannerProps {
   order: Order | null;
   onDismiss: () => void;
+  onExecute?: (orderId: string) => Promise<void>;
 }
 
-export const OrderResultBanner: React.FC<OrderResultBannerProps> = ({ order, onDismiss }) => {
+export const OrderResultBanner: React.FC<OrderResultBannerProps> = ({
+  order,
+  onDismiss,
+  onExecute,
+}) => {
   const [showDetails, setShowDetails] = useState<boolean>(true);
+  const [isExecuting, setIsExecuting] = useState<boolean>(false);
 
   if (!order) return null;
 
   const isApproved = order.status === 'APPROVED';
+  const isExecuted = order.status === 'EXECUTED';
+
+  const handleExecute = async () => {
+    if (!onExecute || isExecuting) return;
+    setIsExecuting(true);
+    try {
+      await onExecute(order.order_id);
+    } finally {
+      setIsExecuting(false);
+    }
+  };
 
   return (
     <div
@@ -77,6 +95,22 @@ export const OrderResultBanner: React.FC<OrderResultBannerProps> = ({ order, onD
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-center">
+          {isApproved && onExecute && (
+            <button
+              onClick={handleExecute}
+              disabled={isExecuting}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/60 transition-all cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              {isExecuting ? 'Executing...' : 'Simulate Execution'}
+            </button>
+          )}
+          {isExecuted && (
+            <span className="px-3 py-1.5 rounded-lg bg-cyan-950/80 border border-cyan-800/80 text-cyan-300 font-bold text-xs flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Executed
+            </span>
+          )}
           <button
             onClick={() => setShowDetails(!showDetails)}
             className="px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/60 text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors flex items-center gap-1.5"

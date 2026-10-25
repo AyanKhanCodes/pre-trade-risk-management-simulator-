@@ -4,6 +4,7 @@ Pydantic schemas for order request validation and response serialization.
 Uses Decimal for price to avoid floating-point precision issues.
 """
 
+import re
 from decimal import Decimal
 from typing import Annotated
 
@@ -25,16 +26,18 @@ class OrderCreateRequest(BaseModel):
     """Schema for creating a new order.
 
     Attributes:
-        symbol: Asset ticker symbol (e.g. "AAPL"). Must be non-empty.
+        symbol: Asset ticker symbol (e.g. "AAPL", "M&M", "RELIANCE"). Must be non-empty.
         side: BUY or SELL.
         quantity: Number of units. Must be a positive integer.
         price: Price per unit as a decimal string (e.g. "150.00").
+        currency: Currency code (USD or INR).
     """
 
-    symbol: Annotated[str, Field(min_length=1, max_length=10)]
+    symbol: Annotated[str, Field(min_length=1, max_length=15)]
     side: OrderSide
     quantity: int
     price: Decimal
+    currency: str = Field(default="USD", pattern="^(USD|INR)$")
 
     @field_validator("quantity")
     @classmethod
@@ -54,12 +57,12 @@ class OrderCreateRequest(BaseModel):
 
     @field_validator("symbol")
     @classmethod
-    def symbol_must_be_alphanumeric(cls, v: str) -> str:
-        """Validate that symbol contains only uppercase letters and digits."""
+    def symbol_must_be_valid(cls, v: str) -> str:
+        """Validate that symbol contains only uppercase letters, digits, '&', and '-'."""
         v = v.strip().upper()
-        if not v.isalnum():
+        if not re.match(r"^[A-Z0-9&-]{1,15}$", v):
             raise ValueError(
-                "Symbol must contain only letters and digits"
+                "Symbol must contain only letters, digits, '&', and '-'"
             )
         return v
 
@@ -71,6 +74,7 @@ class OrderCreateRequest(BaseModel):
                     "side": "BUY",
                     "quantity": 10,
                     "price": "150.00",
+                    "currency": "USD",
                 }
             ]
         }
@@ -90,8 +94,26 @@ class OrderResponse(BaseModel):
     rejection_reasons: list[str]
     risk_checks: list[RiskCheckResponse]
     created_at: str
+    currency: str = "USD"
 
     model_config = {"from_attributes": True}
+
+
+class OrderPreviewResponse(BaseModel):
+    """Schema for returning non-mutating order preview evaluation."""
+
+    symbol: str
+    side: str
+    quantity: int
+    price: str
+    order_value: str
+    currency: str
+    passed: bool
+    rejection_reasons: list[str]
+    risk_checks: list[RiskCheckResponse]
+    daily_order_count: int
+    daily_notional: str
+    preview_timestamp: str
 
 
 class OrderListResponse(BaseModel):

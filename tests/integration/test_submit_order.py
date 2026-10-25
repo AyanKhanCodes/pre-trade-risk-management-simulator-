@@ -479,3 +479,8 @@ class TestHealthAndConfig:
         assert "all_time" in data
         assert "top_symbols" in data
         assert data["all_time"]["total_orders"] == 2
+        assert data["all_time"]["approved"] == 1
+        assert data["all_time"]["rejected"] == 1
+        # Rejected orders must NOT contribute to notional exposure.
+        assert Decimal(data["today"]["total_notional"]) == Decimal("1500.00")
+        assert Decimal(data["all_time"]["total_notional"]) == Decimal("1500.00")

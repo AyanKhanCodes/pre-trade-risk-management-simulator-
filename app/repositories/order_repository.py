@@ -30,8 +30,8 @@ async def create_order(db: aiosqlite.Connection, order: Order) -> Order:
     await db.execute(
         """
         INSERT INTO orders (id, symbol, side, quantity, price, order_value,
-                           status, rejection_reasons, risk_checks, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           status, rejection_reasons, risk_checks, created_at, currency)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             order.id,
@@ -44,6 +44,7 @@ async def create_order(db: aiosqlite.Connection, order: Order) -> Order:
             json.dumps(order.rejection_reasons),
             json.dumps(order.risk_checks),
             order.created_at,
+            order.currency,
         ),
     )
     await db.commit()
@@ -128,41 +129,45 @@ async def update_order_status(
     return await get_order(db, order_id)
 
 
-async def get_daily_order_count(db: aiosqlite.Connection) -> int:
-    """Count orders created today (UTC).
+async def get_daily_order_count(
+    db: aiosqlite.Connection, exclude_order_id: str | None = None
+) -> int:
+    """Count orders created today (UTC), excluding current pending order if specified.
 
     Args:
         db: Active database connection.
+        exclude_order_id: Optional order ID to exclude from count.
 
     Returns:
         Number of orders placed today.
     """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    cursor = await db.execute(
-        "SELECT COUNT(*) FROM orders WHERE created_at LIKE ?",
-        (f"{today}%",),
-    )
+    query = "SELECT COUNT(*) FROM orders WHERE created_at LIKE ?"
+    params = [f"{today}%"]
+    if exclude_order_id:
+        query += " AND id != ?"
+        params.append(exclude_order_id)
+    cursor = await db.execute(query, tuple(params))
     row = await cursor.fetchone()
     return row[0] if row else 0
 
 
 async def get_daily_notional(db: aiosqlite.Connection) -> Decimal:
-    """Sum of all order values created today (UTC).
+    """Sum total notional of both APPROVED and EXECUTED orders today with exact Decimal precision.
 
     Args:
         db: Active database connection.
 
     Returns:
-        Total notional value of orders placed today.
+        Total notional value of approved and executed orders placed today.
     """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     cursor = await db.execute(
-        "SELECT COALESCE(SUM(CAST(order_value AS REAL)), 0) "
-        "FROM orders WHERE created_at LIKE ?",
+        "SELECT order_value FROM orders WHERE status IN ('APPROVED', 'EXECUTED') AND created_at LIKE ?",
         (f"{today}%",),
     )
-    row = await cursor.fetchone()
-    return Decimal(str(row[0])) if row else Decimal("0")
+    rows = await cursor.fetchall()
+    return sum((Decimal(row[0]) for row in rows), Decimal("0.00"))
 
 
 async def get_order_stats(db: aiosqlite.Connection) -> dict:
@@ -187,10 +192,10 @@ async def get_order_stats(db: aiosqlite.Connection) -> dict:
     )
     total_today = (await cursor.fetchone())[0]
 
-    # Approved today.
+    # Approved/Executed today.
     cursor = await db.execute(
         "SELECT COUNT(*) FROM orders "
-        "WHERE status = 'APPROVED' AND created_at LIKE ?",
+        "WHERE status IN ('APPROVED', 'EXECUTED') AND created_at LIKE ?",
         (f"{today}%",),
     )
     approved_today = (await cursor.fetchone())[0]
@@ -203,17 +208,18 @@ async def get_order_stats(db: aiosqlite.Connection) -> dict:
     )
     rejected_today = (await cursor.fetchone())[0]
 
-    # Today's notional value.
+    # Today's notional value (approved and executed orders).
     cursor = await db.execute(
-        "SELECT COALESCE(SUM(CAST(order_value AS REAL)), 0) "
-        "FROM orders WHERE created_at LIKE ?",
+        "SELECT order_value FROM orders "
+        "WHERE status IN ('APPROVED', 'EXECUTED') AND created_at LIKE ?",
         (f"{today}%",),
     )
-    notional_today = Decimal(str((await cursor.fetchone())[0]))
+    rows_today = await cursor.fetchall()
+    notional_today = sum((Decimal(r[0]) for r in rows_today), Decimal("0.00"))
 
-    # All-time approved.
+    # All-time approved and executed.
     cursor = await db.execute(
-        "SELECT COUNT(*) FROM orders WHERE status = 'APPROVED'"
+        "SELECT COUNT(*) FROM orders WHERE status IN ('APPROVED', 'EXECUTED')"
     )
     approved_all = (await cursor.fetchone())[0]
 
@@ -223,11 +229,12 @@ async def get_order_stats(db: aiosqlite.Connection) -> dict:
     )
     rejected_all = (await cursor.fetchone())[0]
 
-    # All-time notional value.
+    # All-time notional value (approved and executed orders).
     cursor = await db.execute(
-        "SELECT COALESCE(SUM(CAST(order_value AS REAL)), 0) FROM orders"
+        "SELECT order_value FROM orders WHERE status IN ('APPROVED', 'EXECUTED')"
     )
-    notional_all = Decimal(str((await cursor.fetchone())[0]))
+    rows_all = await cursor.fetchall()
+    notional_all = sum((Decimal(r[0]) for r in rows_all), Decimal("0.00"))
 
     # Approval rates.
     approval_rate_today = (
@@ -291,6 +298,13 @@ def _row_to_order(row: aiosqlite.Row) -> Order:
     except (IndexError, KeyError, TypeError):
         risk_checks = []
 
+    currency = "USD"
+    try:
+        if "currency" in row.keys() and row["currency"]:
+            currency = row["currency"]
+    except (IndexError, KeyError, TypeError):
+        currency = "USD"
+
     return Order(
         id=row["id"],
         symbol=row["symbol"],
@@ -302,4 +316,5 @@ def _row_to_order(row: aiosqlite.Row) -> Order:
         rejection_reasons=rejection_reasons,
         risk_checks=risk_checks,
         created_at=row["created_at"],
+        currency=currency,
     )

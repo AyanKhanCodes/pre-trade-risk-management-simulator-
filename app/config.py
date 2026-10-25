@@ -35,6 +35,25 @@ class RiskConfig:
     max_price: Decimal = Decimal("50000.00")
     max_daily_orders: int = 50
     max_daily_notional: Decimal = Decimal("500000.00")
+    currency: str = "USD"
+
+    @property
+    def currency_symbol(self) -> str:
+        return "₹" if self.currency == "INR" else "$"
+
+
+def get_inr_default_config() -> RiskConfig:
+    """Default Indian equity risk profile (INR_DEFAULT per §7.1)."""
+    return RiskConfig(
+        max_order_value=Decimal("500000.00"),
+        restricted_symbols=["YESBANK", "SUZLON", "IDEA"],
+        min_price=Decimal("5.00"),
+        max_quantity=10000,
+        max_price=Decimal("100000.00"),
+        max_daily_orders=50,
+        max_daily_notional=Decimal("2500000.00"),
+        currency="INR",
+    )
 
 
 # Human-readable metadata for each risk rule, consumed by the UI.
@@ -117,20 +136,28 @@ RULE_METADATA: dict[str, dict[str, str]] = {
 }
 
 
-# Global default configuration.
-# Tests can override by creating a new RiskConfig instance.
+# Global configurations.
 _default_config: RiskConfig | None = None
+_default_inr_config: RiskConfig | None = None
 
 
-def get_risk_config() -> RiskConfig:
-    """Return the current risk configuration, creating defaults if needed."""
-    global _default_config
+def get_risk_config(currency: str = "USD") -> RiskConfig:
+    """Return the current risk configuration for the given currency."""
+    global _default_config, _default_inr_config
+    if currency == "INR":
+        if _default_inr_config is None:
+            _default_inr_config = get_inr_default_config()
+        return _default_inr_config
+
     if _default_config is None:
-        _default_config = RiskConfig()
+        _default_config = RiskConfig(currency="USD")
     return _default_config
 
 
 def set_risk_config(config: RiskConfig) -> None:
     """Replace the global risk configuration (useful for testing)."""
-    global _default_config
-    _default_config = config
+    global _default_config, _default_inr_config
+    if config.currency == "INR":
+        _default_inr_config = config
+    else:
+        _default_config = config

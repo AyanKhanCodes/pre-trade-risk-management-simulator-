@@ -9,13 +9,23 @@ import {
   WifiOff,
   AlertTriangle,
   Ban,
-  CheckCircle2
+  CheckCircle2,
+  LineChart,
+  Filter,
+  Wallet,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { RiskConfig } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 
-export type NavTab = 'trade' | 'orders' | 'rules' | 'analytics';
+export type NavTab =
+  | 'workstation'
+  | 'screener'
+  | 'portfolio'
+  | 'trade'
+  | 'orders'
+  | 'rules'
+  | 'analytics';
 
 interface SidebarProps {
   currentTab: NavTab;
@@ -45,6 +55,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange, confi
   }, []);
 
   const navItems = [
+    {
+      id: 'workstation' as NavTab,
+      label: 'Market Workstation',
+      desc: 'NSE charts & live watchlist',
+      icon: LineChart,
+    },
+    {
+      id: 'screener' as NavTab,
+      label: 'Stock Screener',
+      desc: 'Discover & preliminary risk',
+      icon: Filter,
+    },
+    {
+      id: 'portfolio' as NavTab,
+      label: 'Simulated Portfolio',
+      desc: 'Cash & mark-to-market P&L',
+      icon: Wallet,
+    },
     {
       id: 'trade' as NavTab,
       label: 'Order Execution',

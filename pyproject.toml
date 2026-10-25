@@ -1,6 +1,6 @@
 [project]
 name = "pre-trade-risk-simulator"
-version = "0.1.0"
+version = "0.3.0"
 description = "Pre-Trade Risk Management Simulator – SV&T Academic Project"
 requires-python = ">=3.11"
 dependencies = [
@@ -8,6 +8,8 @@ dependencies = [
     "uvicorn[standard]>=0.29.0",
     "pydantic>=2.6.0",
     "aiosqlite>=0.20.0",
+    "websockets>=12.0",
+    "aiohttp>=3.9.0",
 ]
 
 [project.optional-dependencies]

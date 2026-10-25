@@ -17,6 +17,8 @@ interface OrderFormProps {
   isLoading: boolean;
   config: RiskConfig | null;
   onValuesChange: (values: { symbol: string; side: OrderSide; quantity: number | ''; price: string }) => void;
+  initialSymbol?: string;
+  initialPrice?: string;
 }
 
 export const OrderForm: React.FC<OrderFormProps> = ({
@@ -24,12 +26,24 @@ export const OrderForm: React.FC<OrderFormProps> = ({
   isLoading,
   config,
   onValuesChange,
+  initialSymbol,
+  initialPrice,
 }) => {
-  const [symbol, setSymbol] = useState<string>('AAPL');
+  const [symbol, setSymbol] = useState<string>(initialSymbol || 'RELIANCE');
   const [side, setSide] = useState<OrderSide>('BUY');
   const [quantity, setQuantity] = useState<number | ''>(10);
-  const [price, setPrice] = useState<string>('150.00');
+  const [price, setPrice] = useState<string>(initialPrice || '2945.50');
+  const [currency, setCurrency] = useState<string>('INR');
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Sync when initial props change
+  React.useEffect(() => {
+    if (initialSymbol) {
+      setSymbol(initialSymbol);
+      if (initialPrice) setPrice(initialPrice);
+      notifyChange(initialSymbol, side, quantity, initialPrice || price);
+    }
+  }, [initialSymbol, initialPrice]);
 
   const notifyChange = (newSymbol: string, newSide: OrderSide, newQty: number | '', newPrice: string) => {
     onValuesChange({
@@ -41,7 +55,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({
   };
 
   const handleSymbolChange = (val: string) => {
-    const clean = val.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const clean = val.toUpperCase().replace(/[^A-Z0-9&-]/g, '');
     setSymbol(clean);
     setFormError(null);
     notifyChange(clean, side, quantity, price);
@@ -72,11 +86,18 @@ export const OrderForm: React.FC<OrderFormProps> = ({
     notifyChange(symbol, side, quantity, val);
   };
 
-  const applyPreset = (presetSymbol: string, presetSide: OrderSide, presetQty: number, presetPrice: string) => {
+  const applyPreset = (
+    presetSymbol: string,
+    presetSide: OrderSide,
+    presetQty: number,
+    presetPrice: string,
+    presetCurrency: string = 'INR'
+  ) => {
     setSymbol(presetSymbol);
     setSide(presetSide);
     setQuantity(presetQty);
     setPrice(presetPrice);
+    setCurrency(presetCurrency);
     setFormError(null);
     notifyChange(presetSymbol, presetSide, presetQty, presetPrice);
   };
@@ -107,6 +128,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({
         side,
         quantity,
         price,
+        currency,
       });
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -338,7 +360,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({
               <input
                 type="number"
                 min="0.0001"
-                step="0.01"
+                step="any"
                 value={price}
                 onChange={(e) => handlePriceChange(e.target.value)}
                 placeholder="150.00"

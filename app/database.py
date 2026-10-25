@@ -21,7 +21,30 @@ CREATE TABLE IF NOT EXISTS orders (
     status TEXT NOT NULL DEFAULT 'CREATED',
     rejection_reasons TEXT NOT NULL DEFAULT '[]',
     risk_checks TEXT NOT NULL DEFAULT '[]',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USD'
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at);
+
+CREATE TABLE IF NOT EXISTS simulated_account (
+    account_id TEXT PRIMARY KEY,
+    currency TEXT NOT NULL DEFAULT 'INR',
+    initial_cash TEXT NOT NULL,
+    current_cash TEXT NOT NULL,
+    reserved_cash TEXT NOT NULL DEFAULT '0',
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS simulated_positions (
+    symbol TEXT PRIMARY KEY,
+    quantity INTEGER NOT NULL,
+    average_entry_price TEXT NOT NULL,
+    current_market_price TEXT NOT NULL,
+    unrealized_pnl TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -44,12 +67,16 @@ async def init_db(db_path: str | None = None) -> None:
     """
     path = db_path or DATABASE_PATH
     async with aiosqlite.connect(path) as db:
-        await db.execute(CREATE_ORDERS_TABLE)
-        # Automatic migration: ensure risk_checks column exists if database existed prior
+        await db.executescript(CREATE_ORDERS_TABLE)
+        # Automatic migration: ensure columns exist if database existed prior
         cursor = await db.execute("PRAGMA table_info(orders)")
         columns = [row[1] for row in await cursor.fetchall()]
         if "risk_checks" not in columns:
             await db.execute(
                 "ALTER TABLE orders ADD COLUMN risk_checks TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "currency" not in columns:
+            await db.execute(
+                "ALTER TABLE orders ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'"
             )
         await db.commit()

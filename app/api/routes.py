@@ -14,10 +14,13 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import RULE_METADATA, get_risk_config, set_risk_config, RiskConfig
 from app.database import get_db
+from app.models.market import Candle, FeedHealth, Instrument, Quote
+from app.models.order import InvalidStateTransitionError, OrderStatus
 from app.repositories import order_repository
 from app.schemas.order import (
     OrderCreateRequest,
     OrderListResponse,
+    OrderPreviewResponse,
     OrderResponse,
     RiskCheckResponse,
 )
@@ -28,6 +31,14 @@ from app.schemas.risk_config import (
     RiskRulesListResponse,
 )
 from app.services import order_service
+from app.services.market_data.service import get_market_data_service
+from app.services.portfolio_service import (
+    PortfolioSummaryResponse,
+    PositionResponse,
+    get_portfolio_summary,
+    get_positions,
+)
+from app.services.screener_service import ScreenerResponse, run_screener
 
 router = APIRouter()
 
@@ -47,6 +58,7 @@ def _order_to_response(order) -> OrderResponse:
             RiskCheckResponse(**check) for check in order.risk_checks
         ],
         created_at=order.created_at,
+        currency=getattr(order, "currency", "USD"),
     )
 
 
@@ -65,7 +77,7 @@ async def create_order(request: OrderCreateRequest):
     A risk-rejected order still returns 201 — risk rejection is a business
     outcome, not an HTTP error. Input validation failures return 422.
     """
-    config = get_risk_config()
+    config = get_risk_config(currency=request.currency)
     db = await get_db()
     try:
         order = await order_service.create_and_validate_order(
@@ -75,8 +87,70 @@ async def create_order(request: OrderCreateRequest):
             quantity=request.quantity,
             price=request.price,
             config=config,
+            currency=request.currency,
         )
         return _order_to_response(order)
+    finally:
+        await db.close()
+
+
+@router.post("/orders/preview", response_model=OrderPreviewResponse)
+async def preview_order(request: OrderCreateRequest):
+    """Pure non-mutating pre-trade risk evaluation.
+
+    Evaluates all 9 risk gates in memory without writing to the database or altering daily counters.
+    """
+    config = get_risk_config(currency=request.currency)
+    db = await get_db()
+    try:
+        preview_data = await order_service.preview_order(
+            db=db,
+            symbol=request.symbol,
+            side=request.side,
+            quantity=request.quantity,
+            price=request.price,
+            config=config,
+            currency=request.currency,
+        )
+        return OrderPreviewResponse(**preview_data)
+    finally:
+        await db.close()
+
+
+@router.post("/orders/{order_id}/execute", response_model=OrderResponse)
+async def execute_order(order_id: str):
+    """Transition an approved order to executed (simulated execution).
+
+    Raises:
+        404 if order not found.
+        400 if order is rejected or in an invalid state for execution.
+        409 if order is already executed.
+    """
+    db = await get_db()
+    try:
+        existing = await order_service.get_order(db, order_id)
+        if existing is None:
+            raise HTTPException(
+                status_code=404, detail=f"Order '{order_id}' not found"
+            )
+        if existing.status == OrderStatus.EXECUTED:
+            raise HTTPException(
+                status_code=409, detail=f"Order '{order_id}' is already EXECUTED"
+            )
+        if existing.status == OrderStatus.REJECTED:
+            raise HTTPException(
+                status_code=400, detail="Cannot execute a REJECTED order"
+            )
+        if existing.status != OrderStatus.APPROVED:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot execute order in state '{existing.status.value}'",
+            )
+
+        executed = await order_service.execute_order(db, order_id)
+        return _order_to_response(executed)
+    except InvalidStateTransitionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         await db.close()
 
@@ -211,3 +285,98 @@ async def get_risk_rules():
         )
 
     return RiskRulesListResponse(rules=rules)
+
+
+# ---------------------------------------------------------------------------
+# Market Data endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/market/status", response_model=FeedHealth)
+async def get_market_feed_status():
+    """Return live market feed connectivity, provider, and latency telemetry."""
+    service = get_market_data_service()
+    return await service.get_feed_health()
+
+
+@router.get("/market/instruments", response_model=list[Instrument])
+async def get_market_instruments():
+    """Return supported NSE cash equity instruments."""
+    service = get_market_data_service()
+    return await service.get_instruments()
+
+
+@router.get("/market/quotes", response_model=list[Quote])
+async def get_market_quotes():
+    """Return latest normalized quotes for all watchlist instruments."""
+    service = get_market_data_service()
+    return await service.get_quotes()
+
+
+@router.get("/market/quotes/{symbol}", response_model=Quote)
+async def get_market_quote(symbol: str):
+    """Return latest quote for a specific symbol."""
+    service = get_market_data_service()
+    quote = await service.get_quote(symbol)
+    if not quote:
+        raise HTTPException(
+            status_code=404, detail=f"Quote for symbol '{symbol}' not found"
+        )
+    return quote
+
+
+@router.get("/market/candles", response_model=list[Candle])
+async def get_market_candles(
+    symbol: str, interval: str = "1m", limit: int = 100
+):
+    """Return historical OHLCV candlestick bars for an instrument."""
+    service = get_market_data_service()
+    return await service.get_candles(symbol, interval=interval, limit=limit)
+
+
+# ---------------------------------------------------------------------------
+# Stock Screener endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/screener", response_model=ScreenerResponse)
+async def get_screener_results(
+    min_price: Decimal | None = None,
+    max_price: Decimal | None = None,
+    min_volume: int | None = None,
+    min_change_pct: Decimal | None = None,
+    max_change_pct: Decimal | None = None,
+):
+    """Filter configured universe with advisory preliminary risk eligibility."""
+    return await run_screener(
+        min_price=min_price,
+        max_price=max_price,
+        min_volume=min_volume,
+        min_change_pct=min_change_pct,
+        max_change_pct=max_change_pct,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Simulated Portfolio & Positions endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/portfolio/summary", response_model=PortfolioSummaryResponse)
+async def get_portfolio_summary_endpoint():
+    """Return simulated cash, portfolio valuation, and mark-to-market unrealized P&L."""
+    db = await get_db()
+    try:
+        return await get_portfolio_summary(db)
+    finally:
+        await db.close()
+
+
+@router.get("/portfolio/positions", response_model=list[PositionResponse])
+async def get_portfolio_positions_endpoint():
+    """Return simulated open positions with entry prices, market values, and P&L."""
+    db = await get_db()
+    try:
+        return await get_positions(db)
+    finally:
+        await db.close()

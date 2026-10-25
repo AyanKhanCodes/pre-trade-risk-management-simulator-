@@ -153,7 +153,9 @@ def check_price_validity(price: Decimal) -> RiskCheckResult:
     return RiskCheckResult(rule_id="RISK-04", passed=True)
 
 
-def check_min_price(price: Decimal, min_price: Decimal) -> RiskCheckResult:
+def check_min_price(
+    price: Decimal, min_price: Decimal, currency_symbol: str = "$"
+) -> RiskCheckResult:
     """RISK-05: Penny stock protection.
 
     Rejects orders where the price per share is below the configured
@@ -162,6 +164,7 @@ def check_min_price(price: Decimal, min_price: Decimal) -> RiskCheckResult:
     Args:
         price: Price per unit.
         min_price: Minimum allowed price per share.
+        currency_symbol: Currency symbol prefix for diagnostics.
 
     Returns:
         RiskCheckResult indicating pass or fail.
@@ -171,7 +174,7 @@ def check_min_price(price: Decimal, min_price: Decimal) -> RiskCheckResult:
             rule_id="RISK-05",
             passed=False,
             reason=(
-                f"Price ${price} is below minimum ${min_price} "
+                f"Price {currency_symbol}{price} is below minimum {currency_symbol}{min_price} "
                 f"(penny stock protection)"
             ),
         )
@@ -199,7 +202,9 @@ def check_max_quantity(quantity: int, max_qty: int) -> RiskCheckResult:
     return RiskCheckResult(rule_id="RISK-06", passed=True)
 
 
-def check_max_price(price: Decimal, max_price: Decimal) -> RiskCheckResult:
+def check_max_price(
+    price: Decimal, max_price: Decimal, currency_symbol: str = "$"
+) -> RiskCheckResult:
     """RISK-07: Fat-finger protection.
 
     Rejects orders where the price per share exceeds a reasonable
@@ -208,6 +213,7 @@ def check_max_price(price: Decimal, max_price: Decimal) -> RiskCheckResult:
     Args:
         price: Price per unit.
         max_price: Maximum allowed price per share.
+        currency_symbol: Currency symbol prefix for diagnostics.
 
     Returns:
         RiskCheckResult indicating pass or fail.
@@ -217,7 +223,7 @@ def check_max_price(price: Decimal, max_price: Decimal) -> RiskCheckResult:
             rule_id="RISK-07",
             passed=False,
             reason=(
-                f"Price ${price} exceeds maximum ${max_price} "
+                f"Price {currency_symbol}{price} exceeds maximum {currency_symbol}{max_price} "
                 f"(fat-finger protection)"
             ),
         )
@@ -255,6 +261,7 @@ def check_daily_notional(
     current_notional: Decimal,
     order_value: Decimal,
     max_notional: Decimal,
+    currency_symbol: str = "$",
 ) -> RiskCheckResult:
     """RISK-09: Daily notional limit.
 
@@ -265,6 +272,7 @@ def check_daily_notional(
         current_notional: Total notional value of orders already placed today.
         order_value: Value of the order being evaluated.
         max_notional: Maximum allowed daily notional value.
+        currency_symbol: Currency symbol prefix for diagnostics.
 
     Returns:
         RiskCheckResult indicating pass or fail.
@@ -275,8 +283,8 @@ def check_daily_notional(
             rule_id="RISK-09",
             passed=False,
             reason=(
-                f"Projected daily notional ${projected} would exceed "
-                f"the maximum of ${max_notional}"
+                f"Projected daily notional {currency_symbol}{projected} would exceed "
+                f"the maximum of {currency_symbol}{max_notional}"
             ),
         )
     return RiskCheckResult(rule_id="RISK-09", passed=True)
@@ -307,17 +315,20 @@ def evaluate(
         RiskResult with aggregated pass/fail and all rejection reasons.
     """
     order_value = Decimal(quantity) * price
+    curr_sym = getattr(config, "currency_symbol", "$")
 
     checks = [
         check_quantity_validity(quantity),
         check_price_validity(price),
-        check_min_price(price, config.min_price),
-        check_max_price(price, config.max_price),
+        check_min_price(price, config.min_price, currency_symbol=curr_sym),
+        check_max_price(price, config.max_price, currency_symbol=curr_sym),
         check_max_order_value(quantity, price, config.max_order_value),
         check_max_quantity(quantity, config.max_quantity),
         check_restricted_symbol(symbol, config.restricted_symbols),
         check_daily_order_count(daily_order_count, config.max_daily_orders),
-        check_daily_notional(daily_notional, order_value, config.max_daily_notional),
+        check_daily_notional(
+            daily_notional, order_value, config.max_daily_notional, currency_symbol=curr_sym
+        ),
     ]
 
     result = RiskResult()
@@ -327,5 +338,7 @@ def evaluate(
         if not check.passed:
             result.passed = False
             result.rejection_reasons.append(check.reason)
+
+    return result
 
     return result
