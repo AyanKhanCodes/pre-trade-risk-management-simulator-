@@ -4,10 +4,10 @@ import {
   Zap,
   TrendingUp,
   TrendingDown,
-  DollarSign,
   Layers,
   AlertCircle,
-  Sparkles
+  Sparkles,
+  PackageCheck
 } from 'lucide-react';
 import { OrderSide, OrderCreateRequest, RiskConfig } from '../../types';
 import { formatCurrency } from '../../lib/utils';
@@ -16,9 +16,10 @@ interface OrderFormProps {
   onSubmit: (order: OrderCreateRequest) => Promise<void>;
   isLoading: boolean;
   config: RiskConfig | null;
-  onValuesChange: (values: { symbol: string; side: OrderSide; quantity: number | ''; price: string }) => void;
+  onValuesChange: (values: { symbol: string; side: OrderSide; quantity: number | ''; price: string; currency: string }) => void;
   initialSymbol?: string;
   initialPrice?: string;
+  holdingInfo?: { held_qty: number; reserved_qty: number; sellable_qty: number } | null;
 }
 
 export const OrderForm: React.FC<OrderFormProps> = ({
@@ -28,12 +29,13 @@ export const OrderForm: React.FC<OrderFormProps> = ({
   onValuesChange,
   initialSymbol,
   initialPrice,
+  holdingInfo,
 }) => {
   const [symbol, setSymbol] = useState<string>(initialSymbol || 'RELIANCE');
   const [side, setSide] = useState<OrderSide>('BUY');
   const [quantity, setQuantity] = useState<number | ''>(10);
   const [price, setPrice] = useState<string>(initialPrice || '2945.50');
-  const [currency, setCurrency] = useState<string>('INR');
+  const [currency] = useState<string>('INR');
   const [formError, setFormError] = useState<string | null>(null);
 
   // Sync when initial props change
@@ -45,12 +47,18 @@ export const OrderForm: React.FC<OrderFormProps> = ({
     }
   }, [initialSymbol, initialPrice]);
 
-  const notifyChange = (newSymbol: string, newSide: OrderSide, newQty: number | '', newPrice: string) => {
+  const notifyChange = (
+    newSymbol: string,
+    newSide: OrderSide,
+    newQty: number | '',
+    newPrice: string
+  ) => {
     onValuesChange({
       symbol: newSymbol,
       side: newSide,
       quantity: newQty,
       price: newPrice,
+      currency: 'INR',
     });
   };
 
@@ -90,14 +98,12 @@ export const OrderForm: React.FC<OrderFormProps> = ({
     presetSymbol: string,
     presetSide: OrderSide,
     presetQty: number,
-    presetPrice: string,
-    presetCurrency: string = 'INR'
+    presetPrice: string
   ) => {
     setSymbol(presetSymbol);
     setSide(presetSide);
     setQuantity(presetQty);
     setPrice(presetPrice);
-    setCurrency(presetCurrency);
     setFormError(null);
     notifyChange(presetSymbol, presetSide, presetQty, presetPrice);
   };
@@ -128,7 +134,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({
         side,
         quantity,
         price,
-        currency,
+        currency: 'INR',
       });
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -153,75 +159,80 @@ export const OrderForm: React.FC<OrderFormProps> = ({
               <Send className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-100 tracking-tight">
-                Order Entry Terminal
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-100 tracking-tight">
+                  NSE Order Entry Terminal
+                </h2>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-mono">
+                  INR (₹)
+                </span>
+              </div>
               <p className="text-[11px] text-slate-400">
-                Submit orders to the automated risk clearinghouse
+                Submit Indian equity orders to the pre-trade risk clearinghouse
               </p>
             </div>
           </div>
         </div>
 
-        {/* Professor Quick-Test Scenarios */}
+        {/* NSE Quick-Test Demonstration Scenarios */}
         <div className="mb-5 p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-2">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Demonstration Test Scenarios:</span>
+            <span>NSE Demonstration Test Scenarios:</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <button
               type="button"
-              onClick={() => applyPreset('AAPL', 'BUY', 10, '150.00')}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
+              onClick={() => applyPreset('RELIANCE', 'BUY', 10, '2945.50')}
+              className="px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
             >
               <div className="text-[11px] font-bold text-emerald-400">✓ Valid Order</div>
-              <div className="text-[10px] text-slate-400 font-mono">AAPL 10 @ $150</div>
+              <div className="text-[10px] text-slate-400 font-mono">RELIANCE 10 @ ₹2,945.50</div>
             </button>
 
             <button
               type="button"
-              onClick={() => applyPreset('PENN', 'BUY', 100, '0.01')}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
+              onClick={() => applyPreset('IDEA', 'BUY', 100, '0.50')}
+              className="px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
             >
-              <div className="text-[11px] font-bold text-purple-400">✗ Penny Stock ($0.01)</div>
-              <div className="text-[10px] text-slate-400 font-mono">PENN 100 @ $0.01</div>
+              <div className="text-[11px] font-bold text-purple-400">✗ Penny Stock (&lt; ₹1)</div>
+              <div className="text-[10px] text-slate-400 font-mono">IDEA 100 @ ₹0.50</div>
             </button>
 
             <button
               type="button"
-              onClick={() => applyPreset('TSLA', 'BUY', 5, '100.00')}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
+              onClick={() => applyPreset('YESBANK', 'BUY', 50, '20.00')}
+              className="px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
             >
               <div className="text-[11px] font-bold text-amber-400">✗ Restricted Symbol</div>
-              <div className="text-[10px] text-slate-400 font-mono">TSLA 5 @ $100</div>
+              <div className="text-[10px] text-slate-400 font-mono">YESBANK 50 @ ₹20</div>
             </button>
 
             <button
               type="button"
-              onClick={() => applyPreset('AAPL', 'BUY', 1, '60000.00')}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
+              onClick={() => applyPreset('TCS', 'BUY', 1, '250000.00')}
+              className="px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
             >
               <div className="text-[11px] font-bold text-rose-400">✗ Fat-Finger Price</div>
-              <div className="text-[10px] text-slate-400 font-mono">AAPL 1 @ $60,000</div>
+              <div className="text-[10px] text-slate-400 font-mono">TCS 1 @ ₹2,50,000</div>
             </button>
 
             <button
               type="button"
-              onClick={() => applyPreset('MSFT', 'BUY', 100, '250.00')}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
+              onClick={() => applyPreset('TCS', 'BUY', 200, '3850.00')}
+              className="px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
             >
-              <div className="text-[11px] font-bold text-rose-400">✗ Exceeds Max Value</div>
-              <div className="text-[10px] text-slate-400 font-mono">MSFT ($25,000)</div>
+              <div className="text-[11px] font-bold text-rose-400">✗ Exceeds Max Notional</div>
+              <div className="text-[10px] text-slate-400 font-mono">TCS (₹7.7 Lakhs &gt; ₹5L)</div>
             </button>
 
             <button
               type="button"
-              onClick={() => applyPreset('NVDA', 'SELL', 10, '120.00')}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
+              onClick={() => applyPreset('INFY', 'SELL', 20, '1820.00')}
+              className="px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-left border border-slate-700/50 transition-colors"
             >
-              <div className="text-[11px] font-bold text-emerald-400">✓ Valid Sell</div>
-              <div className="text-[10px] text-slate-400 font-mono">NVDA 10 @ $120</div>
+              <div className="text-[11px] font-bold text-rose-400">✗ Short-Selling (0 Held)</div>
+              <div className="text-[10px] text-slate-400 font-mono">INFY 20 (RISK-10 Gate)</div>
             </button>
           </div>
         </div>
@@ -267,14 +278,67 @@ export const OrderForm: React.FC<OrderFormProps> = ({
             </div>
           </div>
 
-          {/* Symbol */}
+          {/* SELL-Side Holdings Telemetry Bar */}
+          {side === 'SELL' && (
+            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                  <PackageCheck className="w-4 h-4 text-blue-400" />
+                  Holdings Telemetry & Reservation ({symbol || 'NONE'}):
+                </span>
+                {holdingInfo && holdingInfo.sellable_qty > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleQuantityChange(holdingInfo.sellable_qty.toString())}
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold underline"
+                  >
+                    Sell Max ({holdingInfo.sellable_qty})
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="p-2 rounded-lg bg-slate-800/80 border border-slate-700/50">
+                  <span className="text-[10px] text-slate-400 block font-medium">Position Held</span>
+                  <span className="font-mono text-sm font-bold text-slate-100">
+                    {holdingInfo?.held_qty ?? 0}
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-800/80 border border-slate-700/50">
+                  <span className="text-[10px] text-amber-400 block font-medium">Reserved by Open Sells</span>
+                  <span className="font-mono text-sm font-bold text-amber-400">
+                    {holdingInfo?.reserved_qty ?? 0}
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-800/80 border border-slate-700/50">
+                  <span className="text-[10px] text-emerald-400 block font-medium">Net Sellable Quantity</span>
+                  <span
+                    className={`font-mono text-sm font-bold ${
+                      (holdingInfo?.sellable_qty ?? 0) > 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    {holdingInfo?.sellable_qty ?? 0}
+                  </span>
+                </div>
+              </div>
+
+              {holdingInfo && holdingInfo.held_qty === 0 && (
+                <div className="p-2 rounded-lg bg-rose-950/40 border border-rose-800/60 text-rose-300 text-[11px] flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>No shares held. Short-selling is strictly prohibited by RISK-10.</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* NSE Symbol */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="text-xs font-semibold text-slate-300">
-                Asset Symbol (Ticker)
+                NSE Cash Ticker
               </label>
               <div className="flex gap-1">
-                {['AAPL', 'MSFT', 'NVDA', 'TSLA'].map((s) => (
+                {['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN'].map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -290,8 +354,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({
               type="text"
               value={symbol}
               onChange={(e) => handleSymbolChange(e.target.value)}
-              placeholder="e.g. AAPL"
-              maxLength={10}
+              placeholder="e.g. RELIANCE, TCS, INFY"
+              maxLength={15}
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 font-mono text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 uppercase"
               required
             />
@@ -335,10 +399,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="text-xs font-semibold text-slate-300">
-                Limit Price per Share (USD)
+                Limit Price per Share (INR)
               </label>
               <div className="flex gap-1">
-                {['0.01', '10.00', '150.00'].map((p) => (
+                {['0.50', '20.00', '1820.00', '2945.50', '3850.00'].map((p) => (
                   <button
                     key={p}
                     type="button"
@@ -348,14 +412,14 @@ export const OrderForm: React.FC<OrderFormProps> = ({
                     }}
                     className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
                   >
-                    ${p}
+                    ₹{p}
                   </button>
                 ))}
               </div>
             </div>
             <div className="relative">
               <span className="absolute left-3.5 top-2.5 text-slate-400 font-mono text-sm">
-                $
+                ₹
               </span>
               <input
                 type="number"
@@ -363,17 +427,20 @@ export const OrderForm: React.FC<OrderFormProps> = ({
                 step="any"
                 value={price}
                 onChange={(e) => handlePriceChange(e.target.value)}
-                placeholder="150.00"
+                placeholder="2945.50"
                 className="w-full pl-8 pr-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50"
                 required
               />
             </div>
           </div>
 
-          {/* Total Value Bar */}
-          <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-medium">Estimated Order Value</span>
-            <span className="text-base font-bold font-mono text-emerald-400">
+          {/* Calculated Total Notional Preview */}
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+            <span className="text-xs text-slate-400 flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-slate-400" />
+              Estimated Order Notional
+            </span>
+            <span className="font-mono text-sm font-bold text-slate-100">
               {formatCurrency(orderValue)}
             </span>
           </div>
@@ -381,30 +448,28 @@ export const OrderForm: React.FC<OrderFormProps> = ({
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isLoading}
-            className={`w-full py-3.5 rounded-xl font-bold text-sm tracking-wide uppercase transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 ${
-              side === 'BUY'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-950/60 ring-1 ring-emerald-400/30'
-                : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-rose-950/60 ring-1 ring-rose-400/30'
+            disabled={isLoading || !symbol.trim() || !quantity || !price}
+            className={`w-full py-3 px-4 rounded-xl font-bold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2 shadow-xl ${
+              isLoading || !symbol.trim() || !quantity || !price
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/40'
+                : side === 'BUY'
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/80 hover:shadow-emerald-900/80 border border-emerald-400/40'
+                : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/80 hover:shadow-rose-900/80 border border-rose-400/40'
             }`}
           >
             {isLoading ? (
-              <span className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Evaluating Risk Rules...
-              </span>
+              <>
+                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <span>Evaluating Risk Rules...</span>
+              </>
             ) : (
               <>
-                <Send className="w-4 h-4" />
-                Submit {side} Order for Validation
+                <Zap className="w-4 h-4" />
+                <span>Submit {side} Order (INR)</span>
               </>
             )}
           </button>
         </form>
-      </div>
-
-      <div className="text-[11px] text-slate-500 text-center mt-4">
-        Orders undergo 9 synchronous deterministic pre-trade risk checks before approval
       </div>
     </div>
   );

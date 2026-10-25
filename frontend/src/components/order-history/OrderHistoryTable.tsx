@@ -86,7 +86,7 @@ export const OrderHistoryTable: React.FC<OrderHistoryTableProps> = ({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search ticker (e.g. AAPL, TSLA)..."
+              placeholder="Search ticker (e.g. RELIANCE, TCS)..."
               className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
             />
           </div>

@@ -98,7 +98,7 @@ class Order:
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
-    currency: str = "USD"
+    currency: str = "INR"
 
     def transition_to(self, new_status: OrderStatus) -> None:
         """Transition this order to a new status.

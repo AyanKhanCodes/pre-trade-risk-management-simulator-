@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.config import RULE_METADATA, RiskConfig
+from app.models.order import OrderSide
 
 
 @dataclass
@@ -25,17 +26,26 @@ class RiskCheckResult:
         passed: Whether the rule passed.
         reason: Human-readable reason if the rule failed.
         rule_name: Human-readable name of the rule.
+        status: Evaluation status string ("PASS", "FAIL", "NOT_APPLICABLE").
+        applicable_side: Order side applicability ("BOTH", "BUY", "SELL").
     """
 
     rule_id: str
     passed: bool
     reason: str = ""
     rule_name: str = ""
+    status: str = "PASS"
+    applicable_side: str = "BOTH"
 
     def __post_init__(self) -> None:
-        """Populate rule_name from metadata if not provided."""
-        if not self.rule_name and self.rule_id in RULE_METADATA:
-            self.rule_name = RULE_METADATA[self.rule_id]["name"]
+        """Populate rule_name and applicable_side from metadata if not provided."""
+        if self.rule_id in RULE_METADATA:
+            if not self.rule_name:
+                self.rule_name = RULE_METADATA[self.rule_id]["name"]
+            if self.applicable_side == "BOTH" and "applicable_side" in RULE_METADATA[self.rule_id]:
+                self.applicable_side = RULE_METADATA[self.rule_id]["applicable_side"]
+        if not self.passed:
+            self.status = "FAIL"
 
 
 @dataclass
@@ -154,7 +164,7 @@ def check_price_validity(price: Decimal) -> RiskCheckResult:
 
 
 def check_min_price(
-    price: Decimal, min_price: Decimal, currency_symbol: str = "$"
+    price: Decimal, min_price: Decimal, currency_symbol: str = "₹"
 ) -> RiskCheckResult:
     """RISK-05: Penny stock protection.
 
@@ -203,7 +213,7 @@ def check_max_quantity(quantity: int, max_qty: int) -> RiskCheckResult:
 
 
 def check_max_price(
-    price: Decimal, max_price: Decimal, currency_symbol: str = "$"
+    price: Decimal, max_price: Decimal, currency_symbol: str = "₹"
 ) -> RiskCheckResult:
     """RISK-07: Fat-finger protection.
 
@@ -290,13 +300,179 @@ def check_daily_notional(
     return RiskCheckResult(rule_id="RISK-09", passed=True)
 
 
+def check_available_holdings(
+    side: OrderSide,
+    quantity: int,
+    symbol: str,
+    position_context: dict | None,
+) -> RiskCheckResult:
+    """RISK-10: Available Holdings / Short-Selling Prohibition.
+
+    For SELL orders: verifies that the account holds a non-zero simulated position.
+    Rejects any SELL when current holdings <= 0.
+    For BUY orders: marked NOT_APPLICABLE.
+    """
+    if side != OrderSide.SELL:
+        return RiskCheckResult(
+            rule_id="RISK-10",
+            passed=True,
+            status="NOT_APPLICABLE",
+            applicable_side="SELL",
+            reason="Rule applicable only to SELL orders",
+        )
+
+    if position_context is None:
+        return RiskCheckResult(
+            rule_id="RISK-10",
+            passed=False,
+            status="FAIL",
+            applicable_side="SELL",
+            reason=f"Cannot verify holdings for {symbol} (position data unavailable)",
+        )
+
+    held_qty = position_context.get("held_qty", 0)
+    if held_qty <= 0:
+        return RiskCheckResult(
+            rule_id="RISK-10",
+            passed=False,
+            status="FAIL",
+            applicable_side="SELL",
+            reason=(
+                f"Cannot SELL {quantity} shares of {symbol} — no existing position held "
+                f"(short-selling is prohibited)"
+            ),
+        )
+
+    return RiskCheckResult(
+        rule_id="RISK-10",
+        passed=True,
+        status="PASS",
+        applicable_side="SELL",
+        reason=f"Position held ({held_qty} shares) satisfies holding inventory requirement",
+    )
+
+
+def check_sell_reservation(
+    side: OrderSide,
+    quantity: int,
+    symbol: str,
+    position_context: dict | None,
+) -> RiskCheckResult:
+    """RISK-11: Open Sell Order Reservation.
+
+    For SELL orders: verifies requested quantity does not exceed the net unreserved
+    sellable quantity (Held Quantity - Approved Open Sells).
+    For BUY orders: marked NOT_APPLICABLE.
+    """
+    if side != OrderSide.SELL:
+        return RiskCheckResult(
+            rule_id="RISK-11",
+            passed=True,
+            status="NOT_APPLICABLE",
+            applicable_side="SELL",
+            reason="Rule applicable only to SELL orders",
+        )
+
+    if position_context is None:
+        return RiskCheckResult(
+            rule_id="RISK-11",
+            passed=False,
+            status="FAIL",
+            applicable_side="SELL",
+            reason=f"Cannot verify sell reservations for {symbol}",
+        )
+
+    held_qty = position_context.get("held_qty", 0)
+    reserved_qty = position_context.get("reserved_qty", 0)
+    sellable_qty = position_context.get("sellable_qty", 0)
+
+    if quantity > sellable_qty:
+        if reserved_qty > 0:
+            reason = (
+                f"Requested SELL quantity of {quantity} shares exceeds net sellable "
+                f"quantity of {sellable_qty} shares ({held_qty} held, {reserved_qty} reserved by open orders)"
+            )
+        else:
+            reason = (
+                f"Requested SELL quantity of {quantity} shares exceeds total "
+                f"available holdings of {held_qty} shares"
+            )
+        return RiskCheckResult(
+            rule_id="RISK-11",
+            passed=False,
+            status="FAIL",
+            applicable_side="SELL",
+            reason=reason,
+        )
+
+    return RiskCheckResult(
+        rule_id="RISK-11",
+        passed=True,
+        status="PASS",
+        applicable_side="SELL",
+        reason=f"Requested {quantity} shares within net sellable quantity of {sellable_qty} shares",
+    )
+
+
+def check_ledger_integrity(
+    side: OrderSide,
+    symbol: str,
+    position_context: dict | None,
+) -> RiskCheckResult:
+    """RISK-12: Position Ledger Integrity & Fail-Safe.
+
+    For SELL orders: verifies that position data is coherent and non-negative.
+    For BUY orders: marked NOT_APPLICABLE.
+    """
+    if side != OrderSide.SELL:
+        return RiskCheckResult(
+            rule_id="RISK-12",
+            passed=True,
+            status="NOT_APPLICABLE",
+            applicable_side="SELL",
+            reason="Rule applicable only to SELL orders",
+        )
+
+    if position_context is None:
+        return RiskCheckResult(
+            rule_id="RISK-12",
+            passed=False,
+            status="FAIL",
+            applicable_side="SELL",
+            reason=f"Position ledger integrity check failed for {symbol}: missing ledger context",
+        )
+
+    held_qty = position_context.get("held_qty", 0)
+    reserved_qty = position_context.get("reserved_qty", 0)
+    sellable_qty = position_context.get("sellable_qty", 0)
+
+    if held_qty < 0 or reserved_qty < 0 or sellable_qty < 0:
+        return RiskCheckResult(
+            rule_id="RISK-12",
+            passed=False,
+            status="FAIL",
+            applicable_side="SELL",
+            reason=f"Position ledger integrity check failed for {symbol}: negative quantity detected",
+        )
+
+    return RiskCheckResult(
+        rule_id="RISK-12",
+        passed=True,
+        status="PASS",
+        applicable_side="SELL",
+        reason="Position ledger integrity verified",
+    )
+
+
 def evaluate(
     quantity: int,
     price: Decimal,
     symbol: str,
     config: RiskConfig,
+    side: OrderSide = OrderSide.BUY,
     daily_order_count: int = 0,
     daily_notional: Decimal = Decimal("0"),
+    position_context: dict | None = None,
 ) -> RiskResult:
     """Evaluate an order against all risk rules.
 
@@ -308,8 +484,10 @@ def evaluate(
         price: Price per unit.
         symbol: Asset ticker symbol.
         config: Risk configuration with limits and restricted symbols.
+        side: OrderSide (BUY or SELL).
         daily_order_count: Number of orders already placed today.
         daily_notional: Total notional value of orders already placed today.
+        position_context: Optional holding and reservation state for the symbol.
 
     Returns:
         RiskResult with aggregated pass/fail and all rejection reasons.
@@ -329,6 +507,9 @@ def evaluate(
         check_daily_notional(
             daily_notional, order_value, config.max_daily_notional, currency_symbol=curr_sym
         ),
+        check_available_holdings(side, quantity, symbol, position_context),
+        check_sell_reservation(side, quantity, symbol, position_context),
+        check_ledger_integrity(side, symbol, position_context),
     ]
 
     result = RiskResult()
@@ -338,7 +519,5 @@ def evaluate(
         if not check.passed:
             result.passed = False
             result.rejection_reasons.append(check.reason)
-
-    return result
 
     return result

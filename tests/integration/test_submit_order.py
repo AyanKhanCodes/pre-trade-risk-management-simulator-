@@ -51,7 +51,23 @@ class TestSubmitOrder:
         assert all(c["passed"] for c in data["risk_checks"])
 
     async def test_sell_order_is_approved(self, async_client):
-        """A valid SELL order should also be approved."""
+        """A valid SELL order with existing holdings should be approved."""
+        # Establish holding by buying and executing
+        buy_res = await async_client.post(
+            "/api/orders",
+            json={
+                "symbol": "AAPL",
+                "side": "BUY",
+                "quantity": 10,
+                "price": "200.00",
+            },
+        )
+        assert buy_res.status_code == 201
+        order_id = buy_res.json()["order_id"]
+        exec_res = await async_client.post(f"/api/orders/{order_id}/execute")
+        assert exec_res.status_code == 200
+
+        # Now sell order for 5 shares should be approved
         response = await async_client.post(
             "/api/orders",
             json={
@@ -69,10 +85,10 @@ class TestSubmitOrder:
         response = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "AAPL",
+                "symbol": "RELIANCE",
                 "side": "BUY",
                 "quantity": 1,
-                "price": "10000.01",
+                "price": "500000.01",
             },
         )
         assert response.status_code == 201
@@ -88,7 +104,7 @@ class TestSubmitOrder:
         response = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "TSLA",
+                "symbol": "YESBANK",
                 "side": "BUY",
                 "quantity": 10,
                 "price": "100.00",
@@ -204,44 +220,44 @@ class TestSubmitOrder:
         )
         assert response.status_code == 422
 
-    # Boundary values at the API level.
+    # Boundary values at the API level (INR).
     async def test_boundary_9999_99_approved(self, async_client):
-        """$9,999.99 should be approved (below limit)."""
+        """₹499,999.90 should be approved (below limit)."""
         response = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "AAPL",
+                "symbol": "RELIANCE",
                 "side": "BUY",
-                "quantity": 1,
-                "price": "9999.99",
+                "quantity": 10,
+                "price": "49999.99",
             },
         )
         assert response.status_code == 201
         assert response.json()["status"] == "APPROVED"
 
     async def test_boundary_10000_00_approved(self, async_client):
-        """$10,000.00 should be approved (at limit, inclusive)."""
+        """₹500,000.00 should be approved (at limit, inclusive)."""
         response = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "AAPL",
+                "symbol": "RELIANCE",
                 "side": "BUY",
-                "quantity": 1,
-                "price": "10000.00",
+                "quantity": 10,
+                "price": "50000.00",
             },
         )
         assert response.status_code == 201
         assert response.json()["status"] == "APPROVED"
 
     async def test_boundary_10000_01_rejected(self, async_client):
-        """$10,000.01 should be rejected (above limit)."""
+        """₹500,000.10 should be rejected (above limit)."""
         response = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "AAPL",
+                "symbol": "RELIANCE",
                 "side": "BUY",
-                "quantity": 1,
-                "price": "10000.01",
+                "quantity": 10,
+                "price": "50000.01",
             },
         )
         assert response.status_code == 201
@@ -252,10 +268,10 @@ class TestSubmitOrder:
         response = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "TSLA",
+                "symbol": "YESBANK",
                 "side": "BUY",
                 "quantity": 1,
-                "price": "10000.01",
+                "price": "500001.00",
             },
         )
         assert response.status_code == 201
@@ -296,7 +312,7 @@ class TestSubmitOrder:
         )
         data = response.json()
         assert "risk_checks" in data
-        assert len(data["risk_checks"]) == 9  # 9 rules total
+        assert len(data["risk_checks"]) == 12  # 12 rules total
         for check in data["risk_checks"]:
             assert "rule_id" in check
             assert "rule_name" in check
@@ -378,7 +394,7 @@ class TestOrderRetrieval:
         create_resp = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "TSLA",
+                "symbol": "YESBANK",
                 "side": "BUY",
                 "quantity": 10,
                 "price": "100.00",
@@ -411,8 +427,8 @@ class TestHealthAndConfig:
         data = response.json()
         assert "max_order_value" in data
         assert "restricted_symbols" in data
-        assert data["max_order_value"] == "10000.00"
-        assert "TSLA" in data["restricted_symbols"]
+        assert data["max_order_value"] == "500000.00"
+        assert "YESBANK" in data["restricted_symbols"]
         # New fields should be present.
         assert "min_price" in data
         assert "max_quantity" in data
@@ -431,7 +447,7 @@ class TestHealthAndConfig:
         assert data["max_order_value"] == "5000.00"
         assert data["min_price"] == "2.00"
         # Other fields should remain unchanged.
-        assert "TSLA" in data["restricted_symbols"]
+        assert "YESBANK" in data["restricted_symbols"]
 
     async def test_risk_rules_endpoint(self, async_client):
         """GET /api/risk-rules should return all rules with metadata."""
@@ -439,11 +455,14 @@ class TestHealthAndConfig:
         assert response.status_code == 200
         data = response.json()
         assert "rules" in data
-        assert len(data["rules"]) == 9  # 9 rules total
+        assert len(data["rules"]) == 12  # 12 rules total
         rule_ids = {r["rule_id"] for r in data["rules"]}
         assert "RISK-01" in rule_ids
         assert "RISK-05" in rule_ids  # Penny stock rule
         assert "RISK-09" in rule_ids  # Daily notional rule
+        assert "RISK-10" in rule_ids  # Available holdings rule
+        assert "RISK-11" in rule_ids  # Sell reservation rule
+        assert "RISK-12" in rule_ids  # Ledger integrity rule
         # Each rule should have metadata.
         for rule in data["rules"]:
             assert rule["name"]
@@ -456,7 +475,7 @@ class TestHealthAndConfig:
         await async_client.post(
             "/api/orders",
             json={
-                "symbol": "AAPL",
+                "symbol": "RELIANCE",
                 "side": "BUY",
                 "quantity": 10,
                 "price": "150.00",
@@ -465,7 +484,7 @@ class TestHealthAndConfig:
         await async_client.post(
             "/api/orders",
             json={
-                "symbol": "TSLA",
+                "symbol": "YESBANK",
                 "side": "BUY",
                 "quantity": 10,
                 "price": "100.00",

@@ -30,7 +30,7 @@ async def create_and_validate_order(
     quantity: int,
     price: Decimal,
     config: RiskConfig,
-    currency: str = "USD",
+    currency: str = "INR",
 ) -> Order:
     """Create an order, run it through the risk engine, and persist the result.
 
@@ -84,14 +84,24 @@ async def create_and_validate_order(
         )
         daily_notional = await order_repository.get_daily_notional(db)
 
+        # For SELL orders, retrieve dynamic inventory and reservation context.
+        position_context = None
+        if order.side == OrderSide.SELL:
+            from app.services import portfolio_service
+            position_context = await portfolio_service.get_position_and_sellable_quantity(
+                db, order.symbol, exclude_order_id=order.id
+            )
+
         # Run the risk engine — all rules evaluated, no short-circuit.
         risk_result = risk_engine.evaluate(
             quantity=order.quantity,
             price=order.price,
             symbol=order.symbol,
             config=config,
+            side=order.side,
             daily_order_count=daily_order_count,
             daily_notional=daily_notional,
+            position_context=position_context,
         )
 
         # Store structured risk check results on the order.
@@ -101,6 +111,8 @@ async def create_and_validate_order(
                 "rule_name": check.rule_name,
                 "passed": check.passed,
                 "reason": check.reason,
+                "status": check.status,
+                "applicable_side": check.applicable_side,
             }
             for check in risk_result.check_results
         ]
@@ -169,18 +181,25 @@ async def preview_order(
     quantity: int,
     price: Decimal,
     config: RiskConfig,
-    currency: str = "USD",
+    currency: str = "INR",
 ) -> dict:
     """Pure non-mutating risk evaluation of an order without inserting to database."""
     daily_order_count = await order_repository.get_daily_order_count(db)
     daily_notional = await order_repository.get_daily_notional(db)
+
+    # Retrieve dynamic inventory and reservation context for holding telemetry.
+    from app.services import portfolio_service
+    pos_ctx = await portfolio_service.get_position_and_sellable_quantity(db, symbol)
+
     risk_result = risk_engine.evaluate(
         quantity=quantity,
         price=price,
         symbol=symbol,
         config=config,
+        side=side,
         daily_order_count=daily_order_count,
         daily_notional=daily_notional,
+        position_context=pos_ctx,
     )
     order_value = Decimal(quantity) * price
     return {
@@ -198,11 +217,16 @@ async def preview_order(
                 "rule_name": check.rule_name,
                 "passed": check.passed,
                 "reason": check.reason,
+                "status": check.status,
+                "applicable_side": check.applicable_side,
             }
             for check in risk_result.check_results
         ],
         "daily_order_count": daily_order_count,
         "daily_notional": str(daily_notional),
+        "held_quantity": pos_ctx.get("held_qty", 0),
+        "reserved_quantity": pos_ctx.get("reserved_qty", 0),
+        "sellable_quantity": pos_ctx.get("sellable_qty", 0),
         "preview_timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

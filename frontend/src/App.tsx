@@ -63,12 +63,38 @@ export const App: React.FC = () => {
     side: OrderSide;
     quantity: number | '';
     price: string;
+    currency: string;
   }>({
     symbol: 'RELIANCE',
     side: 'BUY',
     quantity: 10,
     price: '2945.50',
+    currency: 'INR',
   });
+
+  const [holdingInfo, setHoldingInfo] = useState<{
+    symbol: string;
+    held_qty: number;
+    reserved_qty: number;
+    sellable_qty: number;
+  } | null>(null);
+
+  const loadPositionDetail = useCallback(async (sym: string) => {
+    if (!sym || !sym.trim()) {
+      setHoldingInfo(null);
+      return;
+    }
+    try {
+      const res = await api.getPositionDetail(sym.trim());
+      setHoldingInfo(res);
+    } catch {
+      setHoldingInfo(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPositionDetail(formValues.symbol);
+  }, [formValues.symbol, loadPositionDetail]);
 
   // Load initial data
   const loadAllData = useCallback(async (showRefreshing = false) => {
@@ -178,6 +204,7 @@ export const App: React.FC = () => {
       } catch {
         // silent
       }
+      loadPositionDetail(formValues.symbol);
     } finally {
       setIsSubmitting(false);
     }
@@ -193,6 +220,7 @@ export const App: React.FC = () => {
       );
       const newStats = await api.getOrderStats();
       setStats(newStats);
+      loadPositionDetail(formValues.symbol);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setGlobalError(`Execution failed: ${err.message}`);
@@ -305,15 +333,19 @@ export const App: React.FC = () => {
                     onValuesChange={setFormValues}
                     initialSymbol={tradeSymbol}
                     initialPrice={tradePrice}
+                    holdingInfo={holdingInfo}
                   />
                 </div>
 
                 <div className="lg:col-span-6">
                   <LiveValidationCard
                     symbol={formValues.symbol}
+                    side={formValues.side}
                     quantity={formValues.quantity}
                     price={formValues.price}
+                    currency={formValues.currency}
                     config={config}
+                    holdingInfo={holdingInfo}
                   />
                 </div>
               </div>

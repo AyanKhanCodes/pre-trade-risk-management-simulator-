@@ -96,7 +96,7 @@ export const StatsKPIs: React.FC<StatsKPIsProps> = ({ stats, config }) => {
         <div className="mt-3 pt-3 border-t border-slate-800/80 text-xs text-slate-400 flex justify-between">
           <span>Daily Limit:</span>
           <span className="font-mono text-slate-200">
-            {config ? formatCurrency(config.max_daily_notional) : '$500,000'}
+            {config ? formatCurrency(config.max_daily_notional) : '₹50,00,000'}
           </span>
         </div>
       </div>

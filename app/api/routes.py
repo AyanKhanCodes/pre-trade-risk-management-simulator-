@@ -37,6 +37,7 @@ from app.services.portfolio_service import (
     PositionResponse,
     get_portfolio_summary,
     get_positions,
+    get_position_and_sellable_quantity,
 )
 from app.services.screener_service import ScreenerResponse, run_screener
 
@@ -58,7 +59,7 @@ def _order_to_response(order) -> OrderResponse:
             RiskCheckResponse(**check) for check in order.risk_checks
         ],
         created_at=order.created_at,
-        currency=getattr(order, "currency", "USD"),
+        currency=getattr(order, "currency", "INR"),
     )
 
 
@@ -202,9 +203,9 @@ async def get_order(order_id: str):
 
 
 @router.get("/risk-config", response_model=RiskConfigResponse)
-async def get_risk_configuration():
+async def get_risk_configuration(currency: str = "INR"):
     """Return the current risk configuration."""
-    config = get_risk_config()
+    config = get_risk_config(currency=currency)
     return RiskConfigResponse(
         max_order_value=str(config.max_order_value),
         restricted_symbols=config.restricted_symbols,
@@ -279,6 +280,7 @@ async def get_risk_rules():
                 description=meta["description"],
                 category=meta["category"],
                 config_key=config_key,
+                applicable_side=meta.get("applicable_side", "BOTH"),
                 current_value=current_value,
                 enabled=True,
             )
@@ -378,5 +380,15 @@ async def get_portfolio_positions_endpoint():
     db = await get_db()
     try:
         return await get_positions(db)
+    finally:
+        await db.close()
+
+
+@router.get("/portfolio/positions/{symbol}")
+async def get_portfolio_single_position_endpoint(symbol: str):
+    """Return held, reserved, and sellable quantity for a specific symbol."""
+    db = await get_db()
+    try:
+        return await get_position_and_sellable_quantity(db, symbol)
     finally:
         await db.close()

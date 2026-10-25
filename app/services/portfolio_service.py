@@ -22,6 +22,8 @@ INITIAL_CASH_INR = Decimal("1000000.00")  # ₹10 Lakhs
 class PositionResponse(BaseModel):
     symbol: str
     quantity: int
+    reserved_quantity: int = 0
+    sellable_quantity: int = 0
     average_entry_price: str
     current_market_price: str
     market_value: str
@@ -139,8 +141,60 @@ async def settle_order_execution(db: aiosqlite.Connection, order: Order) -> None
     await db.commit()
 
 
+async def get_position_and_sellable_quantity(
+    db: aiosqlite.Connection, symbol: str, exclude_order_id: str | None = None
+) -> dict:
+    """Retrieve held quantity, reserved sell quantity, and net sellable quantity for a symbol.
+
+    Args:
+        db: Active database connection.
+        symbol: The ticker symbol to check.
+        exclude_order_id: Optional order ID to exclude from reservations.
+
+    Returns:
+        Dict with keys: symbol, held_qty, reserved_qty, sellable_qty.
+    """
+    clean_sym = symbol.strip().upper()
+
+    # 1. Held quantity from simulated_positions
+    cursor = await db.execute(
+        "SELECT quantity FROM simulated_positions WHERE symbol = ?",
+        (clean_sym,),
+    )
+    pos_row = await cursor.fetchone()
+    held_qty = int(pos_row[0]) if pos_row else 0
+
+    # 2. Open approved sell reservations from orders table
+    if exclude_order_id:
+        res_cursor = await db.execute(
+            """
+            SELECT COALESCE(SUM(quantity), 0) FROM orders 
+            WHERE symbol = ? AND side = 'SELL' AND status = 'APPROVED' AND id != ?
+            """,
+            (clean_sym, exclude_order_id),
+        )
+    else:
+        res_cursor = await db.execute(
+            """
+            SELECT COALESCE(SUM(quantity), 0) FROM orders 
+            WHERE symbol = ? AND side = 'SELL' AND status = 'APPROVED'
+            """,
+            (clean_sym,),
+        )
+    res_row = await res_cursor.fetchone()
+    reserved_qty = int(res_row[0]) if res_row else 0
+
+    sellable_qty = max(0, held_qty - reserved_qty)
+    return {
+        "symbol": clean_sym,
+        "held_qty": held_qty,
+        "reserved_qty": reserved_qty,
+        "sellable_qty": sellable_qty,
+    }
+
+
 async def get_positions(db: aiosqlite.Connection) -> list[PositionResponse]:
-    """Retrieve simulated positions with mark-to-market prices and P&L."""
+    """Retrieve simulated positions with mark-to-market prices, reservations, and P&L."""
     cursor = await db.execute("SELECT symbol, quantity, average_entry_price, updated_at FROM simulated_positions")
     rows = await cursor.fetchall()
     market_service = get_market_data_service()
@@ -151,6 +205,10 @@ async def get_positions(db: aiosqlite.Connection) -> list[PositionResponse]:
         qty = int(row[1])
         avg_price = Decimal(row[2])
         updated_at = row[3]
+
+        pos_info = await get_position_and_sellable_quantity(db, sym)
+        reserved = pos_info["reserved_qty"]
+        sellable = pos_info["sellable_qty"]
 
         quote = await market_service.get_quote(sym)
         ltp = quote.ltp if quote else avg_price
@@ -167,6 +225,8 @@ async def get_positions(db: aiosqlite.Connection) -> list[PositionResponse]:
             PositionResponse(
                 symbol=sym,
                 quantity=qty,
+                reserved_quantity=reserved,
+                sellable_quantity=sellable,
                 average_entry_price=str(avg_price),
                 current_market_price=str(ltp),
                 market_value=str(market_val),

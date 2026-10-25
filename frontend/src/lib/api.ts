@@ -164,4 +164,9 @@ export const api = {
     const res = await fetch(`${API_BASE}/portfolio/positions`);
     return handleResponse<import('../types').Position[]>(res);
   },
+
+  async getPositionDetail(symbol: string): Promise<import('../types').PositionDetailResponse> {
+    const res = await fetch(`${API_BASE}/portfolio/positions/${encodeURIComponent(symbol)}`);
+    return handleResponse<import('../types').PositionDetailResponse>(res);
+  },
 };

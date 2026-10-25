@@ -6,12 +6,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === '') return '$0.00';
+  if (value === null || value === undefined || value === '') return '₹0.00';
   const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(num)) return '$0.00';
-  return new Intl.NumberFormat('en-US', {
+  if (isNaN(num)) return '₹0.00';
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
-    currency: 'USD',
+    currency: 'INR',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(num);

@@ -45,7 +45,7 @@ class TestExecuteOrderEndpoint:
         create_resp = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "TSLA",
+                "symbol": "YESBANK",
                 "side": "BUY",
                 "quantity": 10,
                 "price": "100.00",
@@ -65,7 +65,7 @@ class TestExecuteOrderEndpoint:
         create_resp = await async_client.post(
             "/api/orders",
             json={
-                "symbol": "AAPL",
+                "symbol": "RELIANCE",
                 "side": "BUY",
                 "quantity": 5,
                 "price": "100.00",
@@ -104,7 +104,7 @@ class TestOrderPreviewEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["passed"] is True
-        assert len(data["risk_checks"]) == 9
+        assert len(data["risk_checks"]) == 12
         assert data["order_value"] == "1500.00"
         assert "preview_timestamp" in data
 
@@ -118,10 +118,10 @@ class TestOrderPreviewEndpoint:
         resp = await async_client.post(
             "/api/orders/preview",
             json={
-                "symbol": "TSLA",
+                "symbol": "YESBANK",
                 "side": "BUY",
                 "quantity": 1,
-                "price": "10000.01",
+                "price": "500001.00",
             },
         )
         assert resp.status_code == 200

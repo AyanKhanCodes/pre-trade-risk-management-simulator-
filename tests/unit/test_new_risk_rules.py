@@ -248,14 +248,14 @@ class TestEvaluateWithNewRules:
         assert any("fat-finger" in r.lower() for r in result.rejection_reasons)
 
     def test_all_rules_checked_count(self):
-        """evaluate() should run all 9 rules."""
+        """evaluate() should run all 12 rules."""
         result = evaluate(
             quantity=10,
             price=Decimal("150.00"),
             symbol="AAPL",
             config=self._default_config(),
         )
-        assert len(result.check_results) == 9
+        assert len(result.check_results) == 12
 
     def test_valid_order_passes_all_new_rules(self):
         """A valid order should pass all 9 rules."""

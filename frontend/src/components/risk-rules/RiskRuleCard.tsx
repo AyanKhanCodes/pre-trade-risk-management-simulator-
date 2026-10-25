@@ -158,7 +158,7 @@ export const RiskRuleCard: React.FC<RiskRuleCardProps> = ({ rule, onUpdateConfig
                 type="text"
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
-                placeholder={rule.config_key === 'restricted_symbols' ? 'e.g. TSLA, GME, AMC' : 'Enter value'}
+                placeholder={rule.config_key === 'restricted_symbols' ? 'e.g. YESBANK, SUZLON, IDEA' : 'Enter value'}
                 className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 autoFocus
               />

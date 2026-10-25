@@ -7,6 +7,8 @@ export interface RiskCheck {
   rule_name: string;
   passed: boolean;
   reason: string;
+  status?: string;
+  applicable_side?: string;
 }
 
 export interface Order {
@@ -43,6 +45,9 @@ export interface OrderPreviewResponse {
   risk_checks: RiskCheck[];
   daily_order_count: number;
   daily_notional: string;
+  held_quantity?: number;
+  reserved_quantity?: number;
+  sellable_quantity?: number;
   preview_timestamp: string;
 }
 
@@ -113,12 +118,24 @@ export interface ScreenerResponse {
 export interface Position {
   symbol: string;
   quantity: number;
+  reserved_quantity?: number;
+  sellable_quantity?: number;
   average_entry_price: string;
   current_market_price: string;
   market_value: string;
   unrealized_pnl: string;
   unrealized_pnl_pct: string;
   updated_at: string;
+}
+
+export interface PositionDetailResponse {
+  symbol: string;
+  held_qty: number;
+  reserved_qty: number;
+  sellable_qty: number;
+  average_entry_price?: string;
+  current_market_price?: string;
+  unrealized_pnl?: string;
 }
 
 export interface PortfolioSummary {
@@ -164,6 +181,7 @@ export interface RiskRule {
   config_key: string;
   current_value: string | null;
   enabled: boolean;
+  applicable_side?: string;
 }
 
 export interface RiskRulesListResponse {

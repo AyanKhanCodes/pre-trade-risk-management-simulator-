@@ -2,20 +2,20 @@ import React from 'react';
 import {
   CheckCircle2,
   XCircle,
-  AlertTriangle,
-  HelpCircle,
   ShieldCheck,
-  TrendingUp,
   Cpu
 } from 'lucide-react';
-import { RiskConfig } from '../../types';
+import { RiskConfig, OrderSide } from '../../types';
 import { formatCurrency, formatNumber } from '../../lib/utils';
 
 interface LiveValidationCardProps {
   symbol: string;
+  side?: OrderSide;
   quantity: number | '';
   price: string;
   config: RiskConfig | null;
+  currency?: string;
+  holdingInfo?: { held_qty: number; reserved_qty: number; sellable_qty: number } | null;
 }
 
 interface PreCheckItem {
@@ -25,13 +25,16 @@ interface PreCheckItem {
   message: string;
   severity: 'pass' | 'fail' | 'warn';
   category: string;
+  sideScope?: 'BOTH' | 'SELL';
 }
 
 export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
   symbol,
+  side = 'BUY',
   quantity,
   price,
   config,
+  holdingInfo,
 }) => {
   const numQty = typeof quantity === 'number' ? quantity : 0;
   const numPrice = parseFloat(price) || 0;
@@ -60,6 +63,7 @@ export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
       : 'Must be positive integer > 0',
     severity: isQtyValid ? 'pass' : 'fail',
     category: 'Input Validation',
+    sideScope: 'BOTH',
   });
 
   // RISK-04: Price Validity
@@ -73,6 +77,7 @@ export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
       : 'Price must be positive > 0',
     severity: isPriceValid ? 'pass' : 'fail',
     category: 'Input Validation',
+    sideScope: 'BOTH',
   });
 
   // RISK-05: Minimum Price (Penny Stock Protection)
@@ -83,28 +88,30 @@ export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
     name: 'Penny Stock Protection',
     passed: !isPennyStock,
     message: isPennyStock
-      ? `Violation: Price $${numPrice.toFixed(2)} is below minimum threshold ${formatCurrency(minPrice)}`
+      ? `Violation: Price ${formatCurrency(numPrice)} is below minimum threshold ${formatCurrency(minPrice)}`
       : `Price meets minimum ${formatCurrency(minPrice)} requirement`,
     severity: isPennyStock ? 'fail' : 'pass',
     category: 'Price Controls',
+    sideScope: 'BOTH',
   });
 
   // RISK-07: Maximum Price (Fat-Finger Protection)
-  const maxPrice = parseFloat(config.max_price) || 50000;
+  const maxPrice = parseFloat(config.max_price) || 200000;
   const isFatFinger = isPriceValid && numPrice > maxPrice;
   checks.push({
     id: 'RISK-07',
     name: 'Fat-Finger Protection',
     passed: !isFatFinger,
     message: isFatFinger
-      ? `Violation: Price $${numPrice.toFixed(2)} exceeds maximum ${formatCurrency(maxPrice)}`
+      ? `Violation: Price ${formatCurrency(numPrice)} exceeds maximum ${formatCurrency(maxPrice)}`
       : `Within max price limit (${formatCurrency(maxPrice)})`,
     severity: isFatFinger ? 'fail' : 'pass',
     category: 'Price Controls',
+    sideScope: 'BOTH',
   });
 
   // RISK-01: Maximum Order Value
-  const maxOrderVal = parseFloat(config.max_order_value) || 10000;
+  const maxOrderVal = parseFloat(config.max_order_value) || 500000;
   const isValueExceeded = calculatedValue > maxOrderVal;
   checks.push({
     id: 'RISK-01',
@@ -115,6 +122,7 @@ export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
       : `Order value ${formatCurrency(calculatedValue)} ≤ limit of ${formatCurrency(maxOrderVal)}`,
     severity: isValueExceeded ? 'fail' : 'pass',
     category: 'Position Limits',
+    sideScope: 'BOTH',
   });
 
   // RISK-06: Maximum Quantity
@@ -129,53 +137,134 @@ export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
       : `Quantity within cap (${formatNumber(maxQty)} shares)`,
     severity: isQtyExceeded ? 'fail' : 'pass',
     category: 'Position Limits',
+    sideScope: 'BOTH',
   });
 
   // RISK-02: Restricted Symbol Check
-  const restrictedList = config.restricted_symbols.map((s) => s.toUpperCase());
+  const restrictedList = (config.restricted_symbols || []).map((s) => s.toUpperCase());
   const isRestricted = upperSymbol ? restrictedList.includes(upperSymbol) : false;
   checks.push({
     id: 'RISK-02',
     name: 'Compliance / Restricted Symbol',
     passed: !isRestricted,
     message: isRestricted
-      ? `Violation: Symbol '${upperSymbol}' is prohibited from trading`
+      ? `Violation: Symbol '${upperSymbol}' is on the restricted blacklist`
       : upperSymbol
-      ? `Symbol '${upperSymbol}' is cleared for trading`
-      : 'Awaiting symbol input',
+      ? `Symbol '${upperSymbol}' is unrestricted`
+      : 'Symbol not entered yet',
     severity: isRestricted ? 'fail' : 'pass',
     category: 'Compliance',
+    sideScope: 'BOTH',
   });
 
-  // RISK-08 & 09: Activity Limits (Server-evaluated)
-  checks.push({
-    id: 'RISK-08 & 09',
-    name: 'Daily Activity & Notional Caps',
-    passed: true,
-    message: `Evaluated against daily aggregate limits (Max ${config.max_daily_orders} orders / ${formatCurrency(config.max_daily_notional)})`,
-    severity: 'pass',
-    category: 'Activity Limits',
-  });
+  // RISK-10: Available Holdings / Short-Selling Prohibition
+  const isSell = side === 'SELL';
+  const heldQty = holdingInfo?.held_qty ?? 0;
+  const sellableQty = holdingInfo?.sellable_qty ?? 0;
+  const reservedQty = holdingInfo?.reserved_qty ?? 0;
 
-  const allPassed = checks.every((c) => c.passed);
+  if (isSell) {
+    const hasHolding = heldQty > 0;
+    checks.push({
+      id: 'RISK-10',
+      name: 'Available Holdings Check',
+      passed: hasHolding,
+      message: hasHolding
+        ? `Position held (${heldQty} shares) satisfies holding inventory requirement`
+        : `Violation: Cannot SELL ${numQty || 0} shares — no position held in ${upperSymbol || 'asset'} (short-selling prohibited)`,
+      severity: hasHolding ? 'pass' : 'fail',
+      category: 'Inventory Verification',
+      sideScope: 'SELL',
+    });
+
+    // RISK-11: Open Sell Order Reservation
+    const hasSellableCapacity = numQty > 0 && numQty <= sellableQty;
+    checks.push({
+      id: 'RISK-11',
+      name: 'Open Sell Order Reservation',
+      passed: hasSellableCapacity,
+      message: hasSellableCapacity
+        ? `Requested ${numQty} shares within net sellable quantity (${sellableQty} shares available)`
+        : reservedQty > 0
+        ? `Violation: Quantity ${numQty} exceeds net sellable quantity ${sellableQty} (${heldQty} held, ${reservedQty} reserved by open orders)`
+        : `Violation: Quantity ${numQty} exceeds available holdings (${heldQty} held)`,
+      severity: hasSellableCapacity ? 'pass' : 'fail',
+      category: 'Inventory Verification',
+      sideScope: 'SELL',
+    });
+
+    // RISK-12: Position Ledger Integrity
+    const isLedgerValid = heldQty >= 0;
+    checks.push({
+      id: 'RISK-12',
+      name: 'Position Ledger Integrity',
+      passed: isLedgerValid,
+      message: isLedgerValid
+        ? 'Position ledger integrity verified (non-negative balance)'
+        : `Violation: Negative position detected (${heldQty})`,
+      severity: isLedgerValid ? 'pass' : 'fail',
+      category: 'Inventory Verification',
+      sideScope: 'SELL',
+    });
+  } else {
+    // BUY side: RISK-10, 11, 12 shown as NOT_APPLICABLE / Pass
+    checks.push({
+      id: 'RISK-10',
+      name: 'Available Holdings Check',
+      passed: true,
+      message: 'Rule applicable only to SELL orders (N/A for BUY)',
+      severity: 'pass',
+      category: 'Inventory Verification',
+      sideScope: 'SELL',
+    });
+    checks.push({
+      id: 'RISK-11',
+      name: 'Open Sell Order Reservation',
+      passed: true,
+      message: 'Rule applicable only to SELL orders (N/A for BUY)',
+      severity: 'pass',
+      category: 'Inventory Verification',
+      sideScope: 'SELL',
+    });
+    checks.push({
+      id: 'RISK-12',
+      name: 'Position Ledger Integrity',
+      passed: true,
+      message: 'Rule applicable only to SELL orders (N/A for BUY)',
+      severity: 'pass',
+      category: 'Inventory Verification',
+      sideScope: 'SELL',
+    });
+  }
+
+  // Count passes and fails
   const failedCount = checks.filter((c) => !c.passed).length;
+  const isAllPassed = failedCount === 0 && numQty > 0 && numPrice > 0 && Boolean(upperSymbol);
 
   return (
-    <div className="rounded-2xl bg-gradient-to-b from-[#0f1626] to-[#0c121e] border border-slate-800 p-5 shadow-xl flex flex-col justify-between h-full">
+    <div className="rounded-2xl bg-gradient-to-b from-[#0f1626] to-[#0c121e] border border-slate-800 p-6 shadow-xl flex flex-col justify-between h-full">
       <div>
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-4">
-          <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-bold text-slate-100 tracking-tight">
-              Real-Time Pre-Trade Check Engine
-            </h3>
+        <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <Cpu className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-100 tracking-tight">
+                Real-Time Pre-Trade Check Engine
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                Deterministic institutional risk gate evaluation
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            {allPassed ? (
+
+          <div>
+            {isAllPassed ? (
               <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 shadow-sm shadow-emerald-950">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                Pre-Check Clear
+                All Gates Passing
               </span>
             ) : (
               <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center gap-1 shadow-sm shadow-rose-950">
@@ -189,15 +278,15 @@ export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
         {/* Current Order Sizing Summary */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-            <span className="text-[10px] text-slate-400 block font-medium">Computed Order Value</span>
+            <span className="text-[10px] text-slate-400 block font-medium">Computed Order Value (INR)</span>
             <span className="text-lg font-bold font-mono text-slate-100">
               {formatCurrency(calculatedValue)}
             </span>
           </div>
           <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-            <span className="text-[10px] text-slate-400 block font-medium">Max Allowed Value</span>
+            <span className="text-[10px] text-slate-400 block font-medium">Max Allowed Value (INR)</span>
             <span className="text-lg font-bold font-mono text-emerald-400">
-              {formatCurrency(config.max_order_value)}
+              {formatCurrency(maxOrderVal)}
             </span>
           </div>
         </div>
@@ -228,23 +317,23 @@ export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-semibold text-slate-200 flex items-center gap-1.5">
-                        <span className="font-mono text-[10px] px-1 py-0.2 rounded bg-slate-800 text-slate-400">
+                      <span className="font-bold tracking-tight text-slate-200">
+                        <span className="text-slate-500 font-mono text-[11px] mr-1.5">
                           {check.id}
                         </span>
-                        <span>{check.name}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-500 font-mono">
+                        {check.name}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500 shrink-0">
                         {check.category}
                       </span>
                     </div>
-                    <div
-                      className={`text-[11px] mt-0.5 leading-relaxed ${
-                        isPass ? 'text-slate-400' : 'text-rose-400 font-medium'
+                    <p
+                      className={`text-[11px] mt-0.5 ${
+                        isPass ? 'text-slate-400' : 'text-rose-300 font-medium'
                       }`}
                     >
                       {check.message}
-                    </div>
+                    </p>
                   </div>
                 </div>
               );
@@ -253,12 +342,13 @@ export const LiveValidationCard: React.FC<LiveValidationCardProps> = ({
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-500 flex items-center justify-between">
+      {/* Footer advice */}
+      <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
         <span className="flex items-center gap-1">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          Full non-short-circuiting evaluation
+          Pre-Trade Risk Clearance
         </span>
-        <span>Deterministic</span>
+        <span className="font-mono">12 Rules Evaluated (INR)</span>
       </div>
     </div>
   );

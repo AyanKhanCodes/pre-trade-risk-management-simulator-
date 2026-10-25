@@ -56,10 +56,10 @@ class TestHypothesisDomainInvariants:
             daily_order_count=10,
             daily_notional=Decimal("1000.00"),
         )
-        assert len(result.check_results) == 9
+        assert len(result.check_results) == 12
         # Check rule IDs are complete
         rule_ids = {c.rule_id for c in result.check_results}
-        assert rule_ids == {f"RISK-0{i}" for i in range(1, 10)}
+        assert rule_ids == {f"RISK-0{i}" for i in range(1, 10)} | {"RISK-10", "RISK-11", "RISK-12"}
 
     @given(
         current_state=st.sampled_from(list(OrderStatus)),

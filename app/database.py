@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS orders (
     rejection_reasons TEXT NOT NULL DEFAULT '[]',
     risk_checks TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'USD'
+    currency TEXT NOT NULL DEFAULT 'INR'
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);

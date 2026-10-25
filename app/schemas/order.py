@@ -20,6 +20,8 @@ class RiskCheckResponse(BaseModel):
     rule_name: str
     passed: bool
     reason: str
+    status: str = "PASS"
+    applicable_side: str = "BOTH"
 
 
 class OrderCreateRequest(BaseModel):
@@ -37,7 +39,7 @@ class OrderCreateRequest(BaseModel):
     side: OrderSide
     quantity: int
     price: Decimal
-    currency: str = Field(default="USD", pattern="^(USD|INR)$")
+    currency: str = Field(default="INR", pattern="^(INR|USD)$")
 
     @field_validator("quantity")
     @classmethod
@@ -113,6 +115,9 @@ class OrderPreviewResponse(BaseModel):
     risk_checks: list[RiskCheckResponse]
     daily_order_count: int
     daily_notional: str
+    held_quantity: int = 0
+    reserved_quantity: int = 0
+    sellable_quantity: int = 0
     preview_timestamp: str
 
 

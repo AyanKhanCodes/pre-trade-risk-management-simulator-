@@ -40,10 +40,8 @@ def _use_test_db(monkeypatch):
 @pytest.fixture(autouse=True)
 def _reset_risk_config():
     """Reset risk configuration to defaults before each test."""
-    set_risk_config(RiskConfig(currency="USD"))
     set_risk_config(get_inr_default_config())
     yield
-    set_risk_config(RiskConfig(currency="USD"))
     set_risk_config(get_inr_default_config())
 
 

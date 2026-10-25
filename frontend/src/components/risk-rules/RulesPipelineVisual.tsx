@@ -35,7 +35,7 @@ export const RulesPipelineVisual: React.FC = () => {
       title: 'Position Limits',
       state: 'VALIDATING',
       desc: 'Prevents single-order over-concentration & excessive capital risk.',
-      rules: ['RISK-01 Max Value ($10,000)', 'RISK-06 Max Quantity (10,000 shares)'],
+      rules: ['RISK-01 Max Value (₹5,00,000)', 'RISK-06 Max Quantity (10,000 shares)'],
       color: 'border-emerald-500/40 bg-emerald-950/20 text-emerald-400',
     },
     {
@@ -43,7 +43,7 @@ export const RulesPipelineVisual: React.FC = () => {
       title: 'Compliance Gate',
       state: 'VALIDATING',
       desc: 'Blocks securities restricted by regulatory or internal blacklists.',
-      rules: ['RISK-02 Restricted Symbols (TSLA, GME, AMC)'],
+      rules: ['RISK-02 Restricted Symbols (YESBANK, SUZLON, IDEA)'],
       color: 'border-amber-500/40 bg-amber-950/20 text-amber-400',
     },
     {
@@ -51,7 +51,7 @@ export const RulesPipelineVisual: React.FC = () => {
       title: 'Portfolio & Activity',
       state: 'VALIDATING',
       desc: 'Calculates day-to-date aggregates to enforce cumulative caps.',
-      rules: ['RISK-08 Daily Order Count (50)', 'RISK-09 Daily Notional ($500k)'],
+      rules: ['RISK-08 Daily Order Count (50)', 'RISK-09 Daily Notional (₹50 Lakhs)'],
       color: 'border-cyan-500/40 bg-cyan-950/20 text-cyan-400',
     },
     {

@@ -61,6 +61,7 @@ class RiskRuleResponse(BaseModel):
     description: str
     category: str
     config_key: str
+    applicable_side: str = "BOTH"
     current_value: str | None = None
     enabled: bool = True
 

@@ -298,12 +298,12 @@ def _row_to_order(row: aiosqlite.Row) -> Order:
     except (IndexError, KeyError, TypeError):
         risk_checks = []
 
-    currency = "USD"
+    currency = "INR"
     try:
         if "currency" in row.keys() and row["currency"]:
             currency = row["currency"]
     except (IndexError, KeyError, TypeError):
-        currency = "USD"
+        currency = "INR"
 
     return Order(
         id=row["id"],
